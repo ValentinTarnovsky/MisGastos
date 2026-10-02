@@ -1,0 +1,52 @@
+{
+  "name": "misgastos",
+  "version": "0.1.0",
+  "private": true,
+  "description": "MisGastos para Windows y iPhone",
+  "author": "Valentin Tarnovsky",
+  "license": "MIT",
+  "repository": "https://github.com/ValentinTarnovsky/MisGastos",
+  "main": "desktop/main.cjs",
+  "scripts": {
+    "start": "electron .",
+    "build:win": "electron-builder --win dir",
+    "build:release": "electron-builder --win nsis"
+  },
+  "dependencies": {
+    "qrcode": "1.5.4",
+    "sql.js": "1.14.2"
+  },
+  "devDependencies": {
+    "electron": "44.5.1",
+    "electron-builder": "26.15.3",
+    "png-to-ico": "3.0.1"
+  },
+  "build": {
+    "appId": "ar.misgastos.app",
+    "productName": "MisGastos",
+    "directories": { "output": "dist" },
+    "files": [
+      "LICENSE",
+      "index.html",
+      "apple-touch-icon.png",
+      "manifest.webmanifest",
+      "styles.css",
+      "app.js",
+      "category-icons.js",
+      "runtime.js",
+      "assets/**/*",
+      "desktop/**/*",
+      "initial-state.json",
+      "package.json"
+    ],
+    "asarUnpack": ["node_modules/sql.js/dist/*.wasm"],
+    "win": { "target": "dir", "icon": "assets/misgastos.ico" },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
+  }
+}

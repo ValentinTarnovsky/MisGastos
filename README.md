@@ -1,0 +1,102 @@
+<p align="center"><img src="assets/misgastos-logo.png" alt="Logo de MisGastos" width="88"></p>
+
+<h1 align="center">MisGastos</h1>
+
+<p align="center">Tus movimientos, categorías y ahorros en un solo lugar.</p>
+
+<p align="center"><a href="https://github.com/ValentinTarnovsky/MisGastos/releases/latest"><strong>Descargar para Windows</strong></a> · <a href="#capturas">Ver capturas</a> · <a href="LICENSE">Licencia MIT</a></p>
+
+MisGastos es una aplicación de escritorio para Windows. Guarda los datos en SQLite en tu PC y permite consultarlos y editarlos desde Safari en un iPhone vinculado por QR. No requiere crear una cuenta.
+
+## Qué podés hacer
+
+- Registrar ingresos y gastos en pesos argentinos, con saldo inicial y categorías propias.
+- Editar, borrar, recategorizar y buscar movimientos.
+- Reutilizar descripciones con sugerencias basadas en compras anteriores de la misma categoría. Un campo de detalle opcional distingue cada compra.
+- Ver gráficos por mes, resumen anual y análisis de cada categoría por comercio o concepto. Los nombres duplicados se pueden unir.
+- Registrar ahorros en ARS o USD. Para compras de dólares, anotás también el importe pagado en ARS.
+- Cambiar entre tema claro y oscuro. La interfaz se adapta a PC e iPhone.
+- Exportar, restaurar y conservar copias locales automáticas.
+- Vincular un iPhone con un QR temporal, aprobarlo desde la PC y revocar el acceso cuando quieras.
+
+## Capturas
+
+Las capturas usan **datos ficticios** de la vista de demostración. Tus datos reales empiezan vacíos.
+
+### Escritorio
+
+![Panel principal de MisGastos en Windows](docs/screenshots/escritorio-inicio.jpg)
+
+<details>
+<summary>Ver análisis por categoría y tema oscuro</summary>
+
+![Gráfico y movimientos de una categoría](docs/screenshots/escritorio-categoria.jpg)
+
+![Panel principal en modo oscuro](docs/screenshots/escritorio-oscuro.jpg)
+
+</details>
+
+### iPhone
+
+<table>
+  <tr>
+    <td align="center"><strong>Inicio</strong></td>
+    <td align="center"><strong>Categoría</strong></td>
+    <td align="center"><strong>Modo oscuro</strong></td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/iphone-inicio.jpg" alt="Inicio en iPhone" width="250"></td>
+    <td><img src="docs/screenshots/iphone-categoria.jpg" alt="Análisis de categoría en iPhone" width="250"></td>
+    <td><img src="docs/screenshots/iphone-categoria-oscuro.jpg" alt="Análisis de categoría en modo oscuro" width="250"></td>
+  </tr>
+</table>
+
+## Instalar en Windows
+
+1. Descargá el instalador desde [la última versión](https://github.com/ValentinTarnovsky/MisGastos/releases/latest).
+2. Ejecutalo y abrí **MisGastos** desde el acceso directo del escritorio o el menú Inicio.
+3. En **Ajustes**, cargá tu saldo inicial en ARS. Después agregá tus movimientos.
+
+El instalador todavía no tiene un certificado de firma comercial, por lo que Windows puede mostrar "Editor desconocido". Descargalo desde este repositorio y, si querés verificarlo, compará su SHA-256 con el publicado en la versión.
+
+La primera apertura muestra la ventana. En los siguientes inicios de Windows, MisGastos se inicia oculto y queda en la bandeja, bajo la flecha junto al reloj. Al cerrar la ventana sigue funcionando en segundo plano. Desde el icono de la bandeja podés abrirla, activar o desactivar el inicio con Windows y salir por completo.
+
+## Vincular un iPhone
+
+1. Mantené la PC encendida, con sesión iniciada y sin suspensión.
+2. En MisGastos para Windows, abrí **Conectar iPhone**.
+3. Elegí la dirección de tu Wi-Fi si ambos equipos comparten la red, o la dirección de Tailscale si vas a usarlo fuera de casa.
+4. Escaneá el QR con el iPhone y abrí el enlace en Safari.
+5. Aprobá la solicitud que aparece en la PC. En Safari podés usar **Compartir > Agregar a Inicio** para crear el acceso directo con el logo.
+
+El QR vence a los cinco minutos. Los celulares vinculados aparecen en **Ajustes** y se pueden revocar. El acceso móvil usa el servidor local de la PC en el puerto `4174`. No abras ese puerto a Internet; para acceder fuera de casa, usá Tailscale en ambos dispositivos. El iPhone accede mediante Safari, mientras que la aplicación instalada se ejecuta en Windows.
+
+## Datos y copias
+
+- Base de datos: `%APPDATA%\MisGastos\misgastos.sqlite`.
+- Copias automáticas: `%APPDATA%\MisGastos\backups\`.
+- Exportación y restauración: **Ajustes > Copias de seguridad**.
+
+La base de datos, las copias y los dispositivos vinculados permanecen en tu PC. No están incluidos en este repositorio ni en el instalador. Si cambiás de PC, exportá una copia JSON desde Ajustes y restaurala en la nueva instalación.
+
+## Desarrollar o compilar
+
+Probado en Windows 11 x64 con Node.js 24 y npm 11.
+
+```powershell
+npm ci
+npm start
+```
+
+Para generar la carpeta ejecutable o el instalador:
+
+```powershell
+npm run build:win
+npm run build:release
+```
+
+`build:win` deja una versión ejecutable en `dist/win-unpacked/`. `build:release` genera el instalador de Windows en `dist/`. La app usa Electron para la ventana y la bandeja, un servidor HTTP local para el iPhone y SQLite para persistencia. La interfaz está escrita en JavaScript y CSS sin un servicio en la nube.
+
+## Licencia
+
+MisGastos se distribuye bajo la [licencia MIT](LICENSE). Los iconos de Lucide conservan su [licencia ISC](assets/lucide-license.txt).

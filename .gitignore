@@ -1,0 +1,18 @@
+node_modules/
+dist/
+preview/
+
+# Datos y configuracion local
+*.sqlite
+*.sqlite-*
+backups/
+.env
+.env.*
+!.env.example
+*.log
+
+# Archivos del sistema y del editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

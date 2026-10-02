@@ -1,0 +1,151 @@
+const fs = require('node:fs');
+const path = require('node:path');
+const crypto = require('node:crypto');
+const initSqlJs = require('sql.js');
+const categoryIcons = require('../category-icons.js');
+
+function validCategoryTone(tone) {
+  return ['lavender', 'coral', 'mint', 'sky', 'rose', 'peach'].includes(tone) || (typeof tone === 'string' && /^#[0-9a-f]{6}$/i.test(tone));
+}
+
+function validDate(value) {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const date = new Date(value + 'T12:00:00Z');
+  return !Number.isNaN(date.valueOf()) && date.toISOString().slice(0, 10) === value;
+}
+
+function validateState(state) {
+  if (!state || typeof state !== 'object' || Array.isArray(state)) throw new Error('Datos inválidos');
+  if (!Number.isSafeInteger(state.openingBalance) || Math.abs(state.openingBalance) > 1e12) throw new Error('Saldo inicial inválido');
+  if (!['light', 'dark'].includes(state.theme)) throw new Error('Tema inválido');
+  if (!Array.isArray(state.categories) || state.categories.length > 200 || !Array.isArray(state.transactions) || state.transactions.length > 100000) throw new Error('Listas inválidas');
+  const categoryIds = new Set();
+  const categories = state.categories.map((item) => {
+    if (!item || typeof item.id !== 'string' || !/^[a-zA-Z0-9_-]{1,80}$/.test(item.id) || categoryIds.has(item.id) || typeof item.name !== 'string' || !item.name.trim() || item.name.length > 32 || !['expense', 'income'].includes(item.kind) || !validCategoryTone(item.tone) || typeof item.icon !== 'string' || !Object.prototype.hasOwnProperty.call(categoryIcons, item.icon)) throw new Error('Categoría inválida');
+    categoryIds.add(item.id);
+    return { id: item.id, name: item.name.trim(), kind: item.kind, tone: item.tone, icon: item.icon };
+  });
+  const categoryMap = new Map(categories.map((item) => [item.id, item]));
+  if (categoryMap.get('savings')?.kind !== 'expense' || categoryMap.get('savings-return')?.kind !== 'income') throw new Error('Faltan categorías de ahorro');
+  const transactionIds = new Set();
+  const balances = { ARS: 0, USD: 0 };
+  const transactions = state.transactions.map((item) => {
+    if (!item || typeof item.id !== 'string' || !/^[a-zA-Z0-9_-]{1,80}$/.test(item.id) || transactionIds.has(item.id) || !['expense', 'income'].includes(item.kind) || !Number.isSafeInteger(item.amount) || item.amount <= 0 || item.amount > 1e12 || typeof item.title !== 'string' || !item.title.trim() || item.title.length > 80 || !validDate(item.date) || categoryMap.get(item.categoryId)?.kind !== item.kind) throw new Error('Movimiento inválido');
+    transactionIds.add(item.id);
+    const clean = { id: item.id, kind: item.kind, amount: item.amount, title: item.title.trim(), categoryId: item.categoryId, date: item.date };
+    if (item.note !== undefined) {
+      if (typeof item.note !== 'string' || item.note.length > 160) throw new Error('Detalle inválido');
+      if (item.note.trim()) clean.note = item.note.trim();
+    }
+    if (item.categoryId === 'savings' || item.categoryId === 'savings-return') {
+      const currency = item.savingsCurrency || 'ARS';
+      const units = item.savingsAmount ?? item.amount;
+      if (!['ARS', 'USD'].includes(currency) || typeof units !== 'number' || !Number.isFinite(units) || units <= 0 || !Number.isSafeInteger(Math.round(units * 100)) || Math.abs(units * 100 - Math.round(units * 100)) > 0.00001) throw new Error('Ahorro inválido');
+      clean.savingsCurrency = currency;
+      clean.savingsAmount = units;
+      balances[currency] += (item.categoryId === 'savings' ? 1 : -1) * units;
+    }
+    return clean;
+  });
+  if (Object.values(balances).some((amount) => amount < -0.00001)) throw new Error('Un retiro supera el ahorro disponible');
+  return { openingBalance: state.openingBalance, theme: state.theme, linked: false, categories, transactions };
+}
+
+async function openStore(userDataPath, initialStatePath) {
+  fs.mkdirSync(userDataPath, { recursive: true });
+  const dbPath = path.join(userDataPath, 'misgastos.sqlite');
+  const backupDir = path.join(userDataPath, 'backups');
+  fs.mkdirSync(backupDir, { recursive: true });
+  const SQL = await initSqlJs({ locateFile: (file) => require.resolve('sql.js/dist/' + file) });
+  let db = fs.existsSync(dbPath) ? new SQL.Database(fs.readFileSync(dbPath)) : new SQL.Database();
+  db.run('CREATE TABLE IF NOT EXISTS app_state (id INTEGER PRIMARY KEY CHECK (id = 1), revision INTEGER NOT NULL, payload TEXT NOT NULL)');
+  db.run('CREATE TABLE IF NOT EXISTS devices (id TEXT PRIMARY KEY, token_hash TEXT UNIQUE NOT NULL, name TEXT NOT NULL, created_at TEXT NOT NULL)');
+
+  function persist() {
+    const temporary = dbPath + '.tmp';
+    fs.writeFileSync(temporary, Buffer.from(db.export()));
+    fs.renameSync(temporary, dbPath);
+    const latest = path.join(backupDir, new Date().toISOString().slice(0, 10) + '-latest.sqlite');
+    fs.copyFileSync(dbPath, latest);
+  }
+
+  function backupDaily() {
+    if (!fs.existsSync(dbPath)) return;
+    const stamp = new Date().toISOString().slice(0, 10);
+    const target = path.join(backupDir, stamp + '.sqlite');
+    if (!fs.existsSync(target)) fs.copyFileSync(dbPath, target);
+  }
+
+  function backupNow() {
+    if (!fs.existsSync(dbPath)) return null;
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const target = path.join(backupDir, stamp + '.sqlite');
+    fs.copyFileSync(dbPath, target);
+    return target;
+  }
+
+  const existing = db.exec('SELECT id FROM app_state WHERE id = 1');
+  if (!existing.length || !existing[0].values.length) {
+    const initial = validateState(JSON.parse(fs.readFileSync(initialStatePath, 'utf8')));
+    db.run('INSERT INTO app_state (id, revision, payload) VALUES (1, 0, ?)', [JSON.stringify(initial)]);
+    persist();
+  }
+
+  function getState() {
+    const stmt = db.prepare('SELECT revision, payload FROM app_state WHERE id = 1');
+    stmt.step();
+    const row = stmt.getAsObject();
+    stmt.free();
+    return { revision: Number(row.revision), data: JSON.parse(row.payload) };
+  }
+
+  function saveState(expectedRevision, state) {
+    const clean = validateState(state);
+    const current = getState();
+    if (expectedRevision !== current.revision) return { conflict: true, ...current };
+    backupDaily();
+    db.run('UPDATE app_state SET revision = ?, payload = ? WHERE id = 1', [current.revision + 1, JSON.stringify(clean)]);
+    persist();
+    return getState();
+  }
+
+  function restoreState(state) {
+    const clean = validateState(state);
+    backupNow();
+    const revision = getState().revision + 1;
+    db.run('UPDATE app_state SET revision = ?, payload = ? WHERE id = 1', [revision, JSON.stringify(clean)]);
+    persist();
+    return getState();
+  }
+
+  function addDevice(name, token) {
+    const id = crypto.randomUUID();
+    db.run('INSERT INTO devices (id, token_hash, name, created_at) VALUES (?, ?, ?, ?)', [id, crypto.createHash('sha256').update(token).digest('hex'), String(name).slice(0, 80), new Date().toISOString()]);
+    persist();
+    return id;
+  }
+
+  function deviceForToken(token) {
+    if (typeof token !== 'string' || token.length < 32 || token.length > 200) return null;
+    const hash = crypto.createHash('sha256').update(token).digest('hex');
+    const stmt = db.prepare('SELECT id, name, created_at FROM devices WHERE token_hash = ?');
+    stmt.bind([hash]);
+    const found = stmt.step() ? stmt.getAsObject() : null;
+    stmt.free();
+    return found;
+  }
+
+  function listDevices() {
+    const result = db.exec('SELECT id, name, created_at FROM devices ORDER BY created_at DESC');
+    return result.length ? result[0].values.map((row) => ({ id: row[0], name: row[1], createdAt: row[2] })) : [];
+  }
+
+  function revokeDevice(id) {
+    db.run('DELETE FROM devices WHERE id = ?', [id]);
+    persist();
+  }
+
+  return { getState, saveState, restoreState, addDevice, deviceForToken, listDevices, revokeDevice, backupDir, dbPath, backupNow, close: () => db.close() };
+}
+
+module.exports = { openStore, validateState };

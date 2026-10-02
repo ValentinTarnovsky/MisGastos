@@ -1,0 +1,18 @@
+{
+  "openingBalance": 0,
+  "theme": "light",
+  "linked": false,
+  "categories": [
+    { "id": "housing", "name": "Vivienda", "kind": "expense", "tone": "lavender", "icon": "home" },
+    { "id": "food", "name": "Alimentación", "kind": "expense", "tone": "coral", "icon": "basket" },
+    { "id": "services", "name": "Servicios", "kind": "expense", "tone": "sky", "icon": "bolt" },
+    { "id": "transport", "name": "Transporte", "kind": "expense", "tone": "mint", "icon": "bus" },
+    { "id": "health", "name": "Salud", "kind": "expense", "tone": "rose", "icon": "heart" },
+    { "id": "dining", "name": "Restaurantes", "kind": "expense", "tone": "peach", "icon": "utensils" },
+    { "id": "savings", "name": "Ahorro", "kind": "expense", "tone": "lavender", "icon": "savings" },
+    { "id": "salary", "name": "Salario", "kind": "income", "tone": "mint", "icon": "briefcase" },
+    { "id": "other-income", "name": "Otros ingresos", "kind": "income", "tone": "sky", "icon": "sparkles" },
+    { "id": "savings-return", "name": "Retiro de ahorro", "kind": "income", "tone": "mint", "icon": "savings" }
+  ],
+  "transactions": []
+}

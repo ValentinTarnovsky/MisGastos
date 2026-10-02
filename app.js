@@ -1,0 +1,1532 @@
+const STORAGE_KEY = 'misgastos-prototype-v2';
+const SAMPLE_MONTH = '2026-09';
+const QR_CODE = 'A7F3K9M2';
+const LIVE = Boolean(window.MISGASTOS_LIVE);
+const DESKTOP = Boolean(window.MISGASTOS_DESKTOP);
+const SAVINGS_CURRENCIES = [
+  { code: 'ARS', name: 'Pesos argentinos', short: 'Pesos' },
+  { code: 'USD', name: 'Dólares estadounidenses', short: 'Dólares' }
+];
+const LEGACY_EUR = { code: 'EUR', name: 'Euros', short: 'Euros' };
+
+const sampleData = {
+  openingBalance: 300000,
+  theme: 'light',
+  linked: false,
+  categories: [
+    { id: 'housing', name: 'Vivienda', kind: 'expense', tone: 'lavender', icon: 'home' },
+    { id: 'food', name: 'Alimentación', kind: 'expense', tone: 'coral', icon: 'basket' },
+    { id: 'services', name: 'Servicios', kind: 'expense', tone: 'sky', icon: 'bolt' },
+    { id: 'transport', name: 'Transporte', kind: 'expense', tone: 'mint', icon: 'bus' },
+    { id: 'health', name: 'Salud', kind: 'expense', tone: 'rose', icon: 'heart' },
+    { id: 'dining', name: 'Restaurantes', kind: 'expense', tone: 'peach', icon: 'utensils' },
+    { id: 'savings', name: 'Ahorro', kind: 'expense', tone: 'lavender', icon: 'savings' },
+    { id: 'salary', name: 'Salario', kind: 'income', tone: 'mint', icon: 'briefcase' },
+    { id: 'other-income', name: 'Otros ingresos', kind: 'income', tone: 'sky', icon: 'sparkles' },
+    { id: 'savings-return', name: 'Retiro de ahorro', kind: 'income', tone: 'mint', icon: 'savings' }
+  ],
+  transactions: [
+    { id: 't1', kind: 'expense', amount: 280000, title: 'Alquiler', categoryId: 'housing', date: '2026-09-03' },
+    { id: 't2', kind: 'income', amount: 1600000, title: 'Salario', categoryId: 'salary', date: '2026-09-05' },
+    { id: 't3', kind: 'expense', amount: 92300, title: 'Supermercado Disco', categoryId: 'food', date: '2026-09-11' },
+    { id: 't4', kind: 'expense', amount: 46200, title: 'Transporte SUBE', categoryId: 'transport', date: '2026-09-15' },
+    { id: 't5', kind: 'expense', amount: 38500, title: 'Restaurante La Parada', categoryId: 'dining', date: '2026-09-19' },
+    { id: 't6', kind: 'expense', amount: 68500, title: 'Internet y servicios', categoryId: 'services', date: '2026-09-23' },
+    { id: 't7', kind: 'expense', amount: 40000, title: 'Farmacia', categoryId: 'health', date: '2026-09-27' },
+    { id: 't8', kind: 'income', amount: 250000, title: 'Venta', categoryId: 'other-income', date: '2026-09-29' },
+    { id: 't9', kind: 'expense', amount: 150000, title: 'Fondo de emergencia', categoryId: 'savings', date: '2026-07-18' },
+    { id: 't10', kind: 'expense', amount: 150000, title: 'Ahorro en dólares', categoryId: 'savings', date: '2026-08-14', savingsCurrency: 'USD', savingsAmount: 100 }
+  ]
+};
+
+const iconPaths = {
+  home: '<path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1z"/>',
+  list: '<path d="M8 6h13M8 12h13M8 18h13"/><path d="M3 6h.01M3 12h.01M3 18h.01"/>',
+  chart: '<path d="M4 19V5M10 19v-8M16 19V3M22 19v-12"/>',
+  savings: '<path d="M5 8h14a2 2 0 0 1 2 2v8a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3v-8a2 2 0 0 1 2-2zM7 8V5a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v3M12 12v5m-2.5-2.5h5"/>',
+  categories: '<rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/>',
+  settings: '<path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  arrowUp: '<path d="m7 14 5-5 5 5"/>',
+  arrowDown: '<path d="m7 10 5 5 5-5"/>',
+  arrowRight: '<path d="m9 18 6-6-6-6"/>',
+  chevronLeft: '<path d="m15 18-6-6 6-6"/>',
+  close: '<path d="M18 6 6 18M6 6l12 12"/>',
+  moon: '<path d="M20.5 14.2A8.5 8.5 0 0 1 9.8 3.5 8.5 8.5 0 1 0 20.5 14.2z"/>',
+  sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M2 12h2m16 0h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
+  phone: '<rect x="6" y="2" width="12" height="20" rx="2"/><path d="M11 18h2"/>',
+  calendar: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 3v4M17 3v4M3 10h18"/>',
+  qr: '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h2v2h-2zM20 14v3h-3M14 20h3M20 20h1"/>',
+  wallet: '<path d="M20 7V5a2 2 0 0 0-2-2H5a3 3 0 0 0-3 3v12a3 3 0 0 0 3 3h15a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2H5a3 3 0 0 1-3-3"/><path d="M22 12h-6a2 2 0 0 0 0 4h6"/>',
+  basket: '<path d="m4 10 2 10h12l2-10zM8 10l4-7 4 7M3 10h18M9 14v3m6-3v3"/>',
+  bus: '<rect x="5" y="3" width="14" height="16" rx="3"/><path d="M5 11h14M8 19v2m8-2v2M8 15h.01M16 15h.01"/>',
+  heart: '<path d="M20.8 8.4c0 4.6-8.8 10.9-8.8 10.9S3.2 13 3.2 8.4a4.7 4.7 0 0 1 8.8-2.3 4.7 4.7 0 0 1 8.8 2.3z"/>',
+  utensils: '<path d="M4 3v7a3 3 0 0 0 6 0V3M7 3v18M18 21V3c-3 2-4 5-4 9h4"/>',
+  briefcase: '<rect x="3" y="7" width="18" height="14" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M3 12h18"/>',
+  bolt: '<path d="m13 2-9 12h7l-1 8 10-13h-7z"/>',
+  sparkles: '<path d="m12 3 1.5 5.5L19 10l-5.5 1.5L12 17l-1.5-5.5L5 10l5.5-1.5zM19 18l.5 1.5L21 20l-1.5.5L19 22l-.5-1.5L17 20l1.5-.5z"/>',
+  search: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/>',
+  grip: '<circle cx="9" cy="6" r="1"/><circle cx="15" cy="6" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="9" cy="18" r="1"/><circle cx="15" cy="18" r="1"/>',
+  check: '<path d="m5 12 4 4L19 6"/>',
+  trash: '<path d="M4 7h16M10 3h4m-8 4 1 14h10l1-14M10 11v6m4-6v6"/>',
+  edit: '<path d="m4 20 4.5-1 11-11a2.1 2.1 0 0 0-3-3l-11 11zM14.5 7.5l3 3"/>',
+  eye: '<path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
+  download: '<path d="M12 3v12m-4-4 4 4 4-4M4 17v4h16v-4"/>',
+  reset: '<path d="M3 11a9 9 0 1 1 2 6M3 4v7h7"/>',
+  info: '<circle cx="12" cy="12" r="10"/><path d="M12 11v6M12 7h.01"/>'
+};
+
+function icon(name, size) {
+  return '<svg class="icon" width="' + (size || 20) + '" height="' + (size || 20) + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + (iconPaths[name] || CATEGORY_ICON_CATALOG[name]?.svg || iconPaths.info) + '</svg>';
+}
+
+const PRESET_TONES = ['lavender', 'coral', 'mint', 'sky', 'rose', 'peach'];
+const TONE_LABELS = { lavender: 'Lavanda', coral: 'Coral', mint: 'Menta', sky: 'Celeste', rose: 'Rosa', peach: 'Durazno' };
+
+function isCustomTone(tone) { return typeof tone === 'string' && /^#[0-9a-f]{6}$/i.test(tone); }
+
+function toneClass(tone) {
+  return isCustomTone(tone) ? 'tone-custom' : 'tone-' + (PRESET_TONES.includes(tone) || tone === 'muted' ? tone : 'lavender');
+}
+
+function toneColor(tone) {
+  return isCustomTone(tone) ? tone : 'var(--tone-' + (PRESET_TONES.includes(tone) || tone === 'muted' ? tone : 'lavender') + ')';
+}
+
+function toneStyle(tone) {
+  if (!isCustomTone(tone)) return '';
+  const parts = [1, 3, 5].map(function (index) { return parseInt(tone.slice(index, index + 2), 16); });
+  const luminance = parts[0] * .2126 + parts[1] * .7152 + parts[2] * .0722;
+  const dark = data.theme === 'dark';
+  const ink = (dark && luminance < 130) || (!dark && luminance > 175)
+    ? parts.map(function (value) { return Math.round(value * .42 + (dark ? 255 : 0) * .58); })
+    : parts;
+  return ' style="--category-color:' + tone + ';--category-wash:rgba(' + parts.join(',') + ',.18);--category-ink:rgb(' + ink.join(',') + ')"';
+}
+
+function freshData() {
+  const copy = JSON.parse(JSON.stringify(sampleData));
+  if (LIVE) { copy.openingBalance = 0; copy.transactions = []; copy.linked = false; }
+  return copy;
+}
+
+function loadData() {
+  if (LIVE) return freshData();
+  try {
+    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
+    if (saved && Array.isArray(saved.transactions) && Array.isArray(saved.categories)) {
+      const matchesExample = function (count) { return saved.transactions.length === count && sampleData.transactions.slice(0, count).every(function (expected) {
+        return saved.transactions.some(function (entry) { return entry.id === expected.id && entry.kind === expected.kind && entry.amount === expected.amount && entry.title === expected.title && entry.categoryId === expected.categoryId && entry.date === expected.date; });
+      }); };
+      if (saved.openingBalance === 0 && matchesExample(8)) {
+        saved.openingBalance = sampleData.openingBalance;
+        saved.transactions.push({ ...sampleData.transactions[8] }, { ...sampleData.transactions[9] });
+      } else if (saved.openingBalance === 150000 && matchesExample(9)) {
+        saved.openingBalance = sampleData.openingBalance;
+        saved.transactions.push({ ...sampleData.transactions[9] });
+      }
+      sampleData.categories.filter(function (category) { return category.id === 'savings' || category.id === 'savings-return'; }).forEach(function (category) {
+        if (!saved.categories.some(function (entry) { return entry.id === category.id; })) saved.categories.push({ ...category });
+      });
+      return saved;
+    }
+  } catch (error) {
+    console.warn('No se pudo cargar la demostración', error);
+  }
+  return freshData();
+}
+
+let data = loadData();
+let route = 'home';
+let selectedMonth = LIVE ? new Date().toISOString().slice(0, 7) : SAMPLE_MONTH;
+let annualYear = LIVE ? new Date().getFullYear() : 2026;
+let filter = 'all';
+let query = '';
+let categoryKind = 'expense';
+let selectedCategoryId = null;
+let conceptFilter = null;
+let modal = null;
+let pairingStep = 'start';
+let toastTimer = null;
+let stateRevision = 0;
+let saveQueue = Promise.resolve();
+let savesPending = 0;
+let saveGeneration = 0;
+let desktopInfo = { networks: [], devices: [], pending: [], backupDir: '' };
+let pairingInfo = null;
+let selectedNetwork = '';
+let restoreCandidate = null;
+
+function saveData() {
+  if (LIVE) {
+    const snapshot = JSON.parse(JSON.stringify(data));
+    const generation = saveGeneration;
+    savesPending++;
+    saveQueue = saveQueue.then(async function () {
+      if (generation !== saveGeneration) return;
+      const response = await fetch('/api/state', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ revision: stateRevision, data: snapshot }) });
+      const result = await response.json();
+      if (response.status === 409) {
+        saveGeneration++;
+        stateRevision = result.revision;
+        data = result.data;
+        render();
+        toast('Otro dispositivo cambió los datos. Volvé a intentar tu cambio.');
+        return;
+      }
+      if (!response.ok) throw new Error(result.error || 'No se pudieron guardar los datos');
+      stateRevision = result.revision;
+    }).catch(async function (error) {
+      saveGeneration++;
+      console.error(error);
+      try {
+        const response = await fetch('/api/state', { cache: 'no-store' });
+        if (response.ok) { const saved = await response.json(); stateRevision = saved.revision; data = saved.data; render(); }
+      } catch (ignored) { console.warn('No se pudo recuperar el estado guardado', ignored); }
+      toast('No se pudo guardar: ' + error.message);
+    }).finally(function () { savesPending--; });
+    return;
+  }
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+}
+
+function escapeHtml(value) {
+  return String(value == null ? '' : value).replace(/[&<>"']/g, function (char) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char];
+  });
+}
+
+function money(amount) {
+  return new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0, minimumFractionDigits: 0 }).format(amount).replace(/\u00a0/g, ' ');
+}
+
+function shortMoney(amount) {
+  if (amount >= 1000000) return '$ ' + (amount / 1000000).toLocaleString('es-AR', { maximumFractionDigits: 1 }) + ' M';
+  if (amount >= 1000) return '$ ' + Math.round(amount / 1000).toLocaleString('es-AR') + ' mil';
+  return money(amount);
+}
+
+function prettyDate(date) {
+  return new Intl.DateTimeFormat('es-AR', { day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(date + 'T12:00:00'));
+}
+
+function numericDate(date) {
+  return new Intl.DateTimeFormat('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(date + 'T12:00:00'));
+}
+
+function monthLabel(month) {
+  const date = new Date(month + '-01T12:00:00');
+  const label = new Intl.DateTimeFormat('es-AR', { month: 'long', year: 'numeric' }).format(date);
+  return label.charAt(0).toUpperCase() + label.slice(1);
+}
+
+function lastDateOfMonth(month) {
+  const parts = month.split('-').map(Number);
+  const day = new Date(parts[0], parts[1], 0).getDate();
+  return month + '-' + String(day).padStart(2, '0');
+}
+
+function categoryById(id) {
+  return data.categories.find(function (category) { return category.id === id; }) || null;
+}
+
+function conceptKey(title) {
+  return String(title || '').trim().replace(/\s+/g, ' ').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('es-AR');
+}
+
+function conceptGroups(categoryId, items) {
+  const groups = new Map();
+  (items || sortedTransactions()).filter(function (item) { return item.categoryId === categoryId; }).forEach(function (item) {
+    const key = conceptKey(item.title);
+    const current = groups.get(key) || { key: key, title: item.title, count: 0, total: 0, lastDate: item.date };
+    current.count++;
+    current.total += item.amount;
+    if (item.date > current.lastDate) { current.title = item.title; current.lastDate = item.date; }
+    groups.set(key, current);
+  });
+  return Array.from(groups.values());
+}
+
+function matchingConcepts(categoryId, query) {
+  const key = conceptKey(query);
+  if (key.length < 2 || !categoryId) return [];
+  return conceptGroups(categoryId).filter(function (group) { return group.key.includes(key); })
+    .sort(function (a, b) {
+      return Number(b.key.startsWith(key)) - Number(a.key.startsWith(key)) || b.count - a.count || b.lastDate.localeCompare(a.lastDate);
+    }).slice(0, 5);
+}
+
+function sortedTransactions() {
+  return data.transactions.slice().sort(function (a, b) {
+    return b.date.localeCompare(a.date) || b.id.localeCompare(a.id);
+  });
+}
+
+function selectedTransactions() {
+  return sortedTransactions().filter(function (item) { return item.date.startsWith(selectedMonth); });
+}
+
+function yearTransactions(year) {
+  return sortedTransactions().filter(function (item) { return item.date.startsWith(String(year) + '-'); });
+}
+
+function savingsTransactions() {
+  return sortedTransactions().filter(function (item) { return item.categoryId === 'savings' || item.categoryId === 'savings-return'; });
+}
+
+function isSavingsEntry(item) {
+  return item.categoryId === 'savings' || item.categoryId === 'savings-return';
+}
+
+function savingsCurrency(item) {
+  return item.savingsCurrency === 'EUR' || item.savingsCurrency === 'USD' ? item.savingsCurrency : 'ARS';
+}
+
+function savingsUnits(item) {
+  return Number.isFinite(item.savingsAmount) && item.savingsAmount > 0 ? item.savingsAmount : item.amount;
+}
+
+function savingsBalances(items) {
+  const balances = { ARS: 0, USD: 0, EUR: 0 };
+  (items || savingsTransactions()).forEach(function (item) {
+    if (!isSavingsEntry(item)) return;
+    const currency = savingsCurrency(item);
+    balances[currency] += (item.categoryId === 'savings' ? 1 : -1) * savingsUnits(item);
+  });
+  return balances;
+}
+
+function formatSavings(currency, amount) {
+  const symbol = currency === 'USD' ? 'US$' : currency === 'EUR' ? '€' : '$';
+  const value = new Intl.NumberFormat('es-AR', { minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(Math.abs(amount));
+  return (amount < 0 ? '- ' : '') + symbol + ' ' + value;
+}
+
+function savingsBalancesValid(items) {
+  return Object.values(savingsBalances(items)).every(function (amount) { return amount >= -0.00001; });
+}
+
+function totals() {
+  const all = data.transactions.reduce(function (sum, item) {
+    return sum + (item.kind === 'income' ? item.amount : -item.amount);
+  }, data.openingBalance);
+  const month = selectedTransactions().reduce(function (sum, item) {
+    sum[item.kind] += item.amount;
+    return sum;
+  }, { income: 0, expense: 0 });
+  return { balance: all, income: month.income, expense: month.expense };
+}
+
+function customSelect(id, label, name, value, choices, className) {
+  const selected = choices.find(function (choice) { return choice.value === value; }) || choices[0];
+  const selectedContent = selected ? (selected.leading || '') + '<span>' + escapeHtml(selected.label) + '</span>' : '<span>Elegí una opción</span>';
+  return '<div class="custom-select ' + (className || '') + '" data-dropdown="' + id + '">' +
+    (className === 'form-dropdown' ? '<span class="field-label" id="' + id + '-label">' + escapeHtml(label) + '</span>' : '') +
+    (name ? '<input type="hidden" name="' + escapeHtml(name) + '" value="' + escapeHtml(selected ? selected.value : '') + '" />' : '') +
+    '<button class="dropdown-trigger" type="button" data-dropdown-trigger aria-label="' + escapeHtml(label) + '" aria-haspopup="listbox" aria-expanded="false" aria-controls="' + id + '-menu"><span class="dropdown-value">' + selectedContent + '</span>' + icon('arrowDown', 16) + '</button>' +
+    '<div class="dropdown-menu" id="' + id + '-menu" role="listbox" aria-label="' + escapeHtml(label) + '">' +
+      choices.map(function (choice) { return '<button class="dropdown-option" type="button" role="option" data-dropdown-option data-value="' + escapeHtml(choice.value) + '" aria-selected="' + (selected && selected.value === choice.value ? 'true' : 'false') + '"><span class="dropdown-option-content">' + (choice.leading || '') + '<span>' + escapeHtml(choice.label) + '</span></span>' + icon('check', 16) + '</button>'; }).join('') +
+    '</div></div>';
+}
+
+function periodYearMarkup(year) {
+  const labels = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+  return '<div class="period-year"><button class="calendar-nav" type="button" data-period-year-shift="-1" aria-label="Año anterior">' + icon('chevronLeft', 17) + '</button><strong>' + year + '</strong><button class="calendar-nav" type="button" data-period-year-shift="1" aria-label="Año siguiente">' + icon('arrowRight', 17) + '</button></div>' +
+    '<div class="period-months">' + labels.map(function (label, index) {
+      const month = year + '-' + String(index + 1).padStart(2, '0');
+      const hasData = data.transactions.some(function (item) { return item.date.startsWith(month); });
+      return '<button class="period-month' + (hasData ? ' has-data' : '') + '" type="button" data-period-month="' + month + '" aria-label="' + escapeHtml(monthLabel(month)) + '" aria-pressed="' + String(month === selectedMonth) + '">' + label + '</button>';
+    }).join('') + '</div><p class="period-hint">El punto indica un mes con movimientos.</p>';
+}
+
+function periodPicker(withArrows) {
+  const year = Number(selectedMonth.slice(0, 4));
+  return '<div class="period-picker" data-period-picker data-view-year="' + year + '">' +
+    (withArrows ? '<button class="period-step" type="button" data-period-shift="-1" aria-label="Mes anterior">' + icon('chevronLeft', 17) + '</button>' : '') +
+    '<button class="period-trigger" type="button" data-period-trigger aria-label="Elegir mes y año" aria-haspopup="dialog" aria-expanded="false" aria-controls="period-popover">' + icon('calendar', 16) + '<span>' + escapeHtml(monthLabel(selectedMonth)) + '</span>' + icon('arrowDown', 15) + '</button>' +
+    (withArrows ? '<button class="period-step" type="button" data-period-shift="1" aria-label="Mes siguiente">' + icon('arrowRight', 17) + '</button>' : '') +
+    '<div class="period-popover" id="period-popover" role="dialog" aria-label="Elegir mes y año">' + periodYearMarkup(year) + '</div></div>';
+}
+
+function shiftSelectedMonth(amount) {
+  const parts = selectedMonth.split('-').map(Number);
+  const next = new Date(parts[0], parts[1] - 1 + amount, 1);
+  selectedMonth = next.getFullYear() + '-' + String(next.getMonth() + 1).padStart(2, '0');
+  render();
+}
+
+function calendarMarkup(month, selectedDate) {
+  const parts = month.split('-').map(Number);
+  const firstWeekday = (new Date(parts[0], parts[1] - 1, 1).getDay() + 6) % 7;
+  const days = new Date(parts[0], parts[1], 0).getDate();
+  const cells = Array(firstWeekday).fill('<span class="calendar-empty"></span>');
+  for (let day = 1; day <= days; day += 1) {
+    const value = month + '-' + String(day).padStart(2, '0');
+    cells.push('<button type="button" class="calendar-day" data-calendar-day="' + value + '" aria-label="' + escapeHtml(prettyDate(value)) + '" aria-pressed="' + String(value === selectedDate) + '">' + day + '</button>');
+  }
+  return '<div class="calendar-head"><button class="calendar-nav" type="button" data-calendar-shift="-1" aria-label="Mes anterior">' + icon('chevronLeft', 17) + '</button><strong>' + escapeHtml(monthLabel(month)) + '</strong><button class="calendar-nav" type="button" data-calendar-shift="1" aria-label="Mes siguiente">' + icon('arrowRight', 17) + '</button></div>' +
+    '<div class="calendar-weekdays"><span>Lu</span><span>Ma</span><span>Mi</span><span>Ju</span><span>Vi</span><span>Sa</span><span>Do</span></div>' +
+    '<div class="calendar-grid">' + cells.join('') + '</div>';
+}
+
+function datePicker(date) {
+  return '<div class="date-picker" data-date-picker data-calendar-month="' + date.slice(0, 7) + '"><span class="field-label" id="date-label">Fecha</span><input type="hidden" name="date" value="' + escapeHtml(date) + '" />' +
+    '<button class="date-trigger" type="button" data-date-trigger aria-label="Fecha" aria-haspopup="dialog" aria-expanded="false" aria-controls="date-popover"><span data-date-label>' + escapeHtml(numericDate(date)) + '</span>' + icon('calendar', 18) + '</button>' +
+    '<div class="date-popover" id="date-popover" role="dialog" aria-label="Elegir fecha">' + calendarMarkup(date.slice(0, 7), date) + '</div></div>';
+}
+
+function categoryIcon(category, size) {
+  const cat = category || { tone: 'lavender', icon: 'wallet' };
+  return '<span class="category-icon ' + toneClass(cat.tone) + '"' + toneStyle(cat.tone) + '>' + icon(cat.icon, size || 20) + '</span>';
+}
+
+function toast(message) {
+  const existing = document.querySelector('.toast');
+  if (existing) existing.remove();
+  const node = document.createElement('div');
+  node.className = 'toast';
+  node.setAttribute('role', 'status');
+  node.textContent = message;
+  document.body.appendChild(node);
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(function () { node.remove(); }, 3200);
+}
+
+function navItem(id, label, iconName) {
+  const active = route === id || (route === 'pair' && id === 'settings') || (route === 'annual' && id === 'home') || (route === 'category-detail' && id === 'categories');
+  return '<button class="nav-item' + (active ? ' is-active' : '') + '" data-route="' + id + '" type="button" aria-current="' + (active ? 'page' : 'false') + '">' +
+    icon(iconName, 20) + '<span>' + label + '</span></button>';
+}
+
+function shell(content) {
+  const themeIcon = data.theme === 'light' ? 'moon' : 'sun';
+  return (LIVE ? '' : '<div class="prototype-ribbon"><span class="prototype-dot"></span> PROTOTIPO DE DISEÑO <span class="ribbon-separator">|</span> Datos ficticios</div>') +
+    '<div class="app-shell">' +
+      (LIVE ? '' : '<div class="titlebar"><div class="titlebar-brand"><span class="brand-mark"><img src="assets/misgastos-logo.png" alt="" width="28" height="28" style="display:block;width:28px;height:28px;max-width:28px;max-height:28px" /></span><span>MisGastos</span></div><div class="titlebar-label">Vista previa para revisar el diseño</div><div class="window-controls" aria-hidden="true"><span></span><span></span><span></span></div></div>') +
+      '<aside class="sidebar"><div class="sidebar-brand"><span class="brand-mark large"><img src="assets/misgastos-logo.png" alt="" width="42" height="42" style="display:block;width:42px;height:42px;max-width:42px;max-height:42px" /></span><div><strong>MisGastos</strong><small>Tu dinero, en orden</small></div></div>' +
+        '<nav class="side-nav" aria-label="Principal">' +
+          navItem('home', 'Inicio', 'home') + navItem('transactions', 'Movimientos', 'list') + navItem('categories', 'Categorías', 'categories') + navItem('savings', 'Ahorros', 'savings') + navItem('settings', 'Ajustes', 'settings') +
+        '</nav><div class="sidebar-foot"><span class="demo-status"><span class="status-dot"></span> ' + (LIVE ? 'Datos guardados en tu PC' : 'Modo demostración') + '</span><small>' + (LIVE ? 'Se sincronizan con tus celulares vinculados.' : 'Los cambios solo viven en este navegador.') + '</small></div></aside>' +
+      '<div class="app-body"><div class="mobile-topbar"><div class="mobile-wordmark"><span class="brand-mark"><img src="assets/misgastos-logo.png" alt="" width="29" height="29" style="display:block;width:29px;height:29px;max-width:29px;max-height:29px" /></span><strong>MisGastos</strong></div><button class="icon-button" data-action="toggle-theme" aria-label="Cambiar tema" type="button">' + icon(themeIcon, 20) + '</button></div>' +
+        '<main class="main-content" id="main-content">' + content + '</main></div>' +
+      '<nav class="mobile-nav" aria-label="Principal">' +
+        navItem('home', 'Inicio', 'home') + navItem('transactions', 'Movimientos', 'list') + navItem('categories', 'Categorías', 'categories') + navItem('savings', 'Ahorros', 'savings') + navItem('settings', 'Ajustes', 'settings') +
+      '</nav>' +
+    '</div>' + (modal ? renderModal() : '');
+}
+
+function pageHeader(eyebrow, title, subtitle, actions, className) {
+  return '<header class="page-header ' + (className || '') + '"><div><p class="eyebrow">' + eyebrow + '</p><h1>' + title + '</h1><p class="page-subtitle">' + subtitle + '</p></div><div class="page-actions">' + (actions || '') + '</div></header>';
+}
+
+function summaryCard(t) {
+  return '<section class="balance-card"><div class="balance-top"><span>Saldo actual</span><span class="balance-wallet">' + icon('wallet', 22) + '</span></div>' +
+    '<div class="balance-value">' + money(t.balance) + '</div><div class="balance-caption">Tu dinero disponible hoy</div>' +
+    '<div class="balance-mobile-metrics"><div><span class="metric-symbol income">' + icon('arrowUp', 16) + '</span><small>Ingresos</small><strong>' + money(t.income) + '</strong></div><div><span class="metric-symbol expense">' + icon('arrowDown', 16) + '</span><small>Gastos</small><strong>' + money(t.expense) + '</strong></div></div>' +
+    '<button class="mobile-add-button" data-action="add-transaction" type="button">' + icon('plus', 19) + ' Agregar movimiento</button></section>';
+}
+
+function metricCard(label, value, kind, iconName) {
+  return '<section class="metric-card ' + kind + '"><span class="metric-symbol ' + kind + '">' + icon(iconName, 23) + '</span><div><span class="metric-label">' + label + '</span><strong>' + money(value) + '</strong><small>' + monthLabel(selectedMonth) + '</small></div></section>';
+}
+
+function weekTotals(items) {
+  const weeks = [0, 0, 0, 0];
+  (items || selectedTransactions().filter(function (item) { return item.kind === 'expense'; })).forEach(function (item) {
+    weeks[Math.min(3, Math.floor((Number(item.date.slice(8, 10)) - 1) / 7))] += item.amount;
+  });
+  return weeks;
+}
+
+function renderChart(items, heading) {
+  const weeks = weekTotals(items);
+  const max = items ? Math.max(1, ...weeks) : Math.max(100000, ...weeks);
+  const title = heading || 'Gastos por semana';
+  const parts = selectedMonth.split('-').map(Number);
+  const lastDay = new Date(parts[0], parts[1], 0).getDate();
+  const labels = ['1 al 7', '8 al 14', '15 al 21', '22 al ' + lastDay];
+  const bars = weeks.map(function (value, index) {
+    const height = value ? Math.max(8, Math.round(value / max * 100)) : 3;
+    return '<div class="bar-group"><div class="bar-track"><div class="bar-fill bar-' + index + '" style="height:' + height + '%"><span class="bar-tooltip">' + money(value) + '</span></div></div><span class="bar-label">' + labels[index] + '</span></div>';
+  }).join('');
+  return '<section class="panel chart-panel"><div class="panel-heading"><div><p class="section-eyebrow">DE UN VISTAZO</p><h2>' + title + '</h2></div><span class="panel-period">' + escapeHtml(monthLabel(selectedMonth)) + '</span></div>' +
+    (weeks.some(Boolean)
+      ? '<div class="chart-wrap"><div class="chart-axis"><span>' + money(max) + '</span><span>' + money(Math.round(max / 2)) + '</span><span>$ 0</span></div><div class="chart-body"><div class="chart-line top"></div><div class="chart-line middle"></div><div class="chart-line bottom"></div><div class="bars" role="img" aria-label="' + title + ' en ' + escapeHtml(monthLabel(selectedMonth)) + '">' + bars + '</div></div></div><p class="chart-footnote">Deslizá por cada semana para ver el total.</p>'
+      : '<div class="chart-empty">' + icon('chart', 26) + '<strong>Sin movimientos en este mes</strong><span>Elegí otro período o agregá un movimiento.</span></div>') + '</section>';
+}
+
+function categoryBreakdown(items, label) {
+  items = items || selectedTransactions();
+  label = label || monthLabel(selectedMonth);
+  const total = items.filter(function (item) { return item.kind === 'expense'; }).reduce(function (sum, item) { return sum + item.amount; }, 0);
+  const byCategory = new Map();
+  items.filter(function (item) { return item.kind === 'expense'; }).forEach(function (item) {
+    byCategory.set(item.categoryId, (byCategory.get(item.categoryId) || 0) + item.amount);
+  });
+  const entries = Array.from(byCategory.entries()).sort(function (a, b) { return b[1] - a[1]; });
+  const top = entries.slice(0, 3).map(function (entry) { return { id: entry[0], name: (categoryById(entry[0]) || {}).name || 'Sin categoría', amount: entry[1], tone: (categoryById(entry[0]) || {}).tone || 'lavender' }; });
+  const other = entries.slice(3).reduce(function (sum, entry) { return sum + entry[1]; }, 0);
+  if (other) top.push({ name: 'Otros', amount: other, tone: 'muted' });
+  let current = 0;
+  const stops = top.map(function (entry) {
+    const start = current;
+    current += total ? entry.amount / total * 100 : 0;
+    return toneColor(entry.tone) + ' ' + start.toFixed(2) + '% ' + current.toFixed(2) + '%';
+  });
+  const gradient = stops.length ? 'conic-gradient(' + stops.join(', ') + ')' : 'conic-gradient(var(--border) 0% 100%)';
+  const list = top.length ? top.map(function (entry) {
+    return '<li>' + (entry.id ? '<button class="legend-link" type="button" data-category-detail="' + escapeHtml(entry.id) + '" aria-label="Ver detalle de ' + escapeHtml(entry.name) + '">' : '<span class="legend-link">') + '<span class="legend-name"><span class="legend-dot ' + toneClass(entry.tone) + '"' + toneStyle(entry.tone) + '></span>' + escapeHtml(entry.name) + '</span><strong>' + money(entry.amount) + '</strong>' + (entry.id ? '</button>' : '</span>') + '</li>';
+  }).join('') : '<li class="empty-legend">Todavía no hay gastos en este período.</li>';
+  return '<section class="panel breakdown-panel"><div class="panel-heading"><div><p class="section-eyebrow">EN QUÉ SE FUE</p><h2>Por categoría</h2></div><span class="panel-period">' + escapeHtml(label) + '</span></div><div class="breakdown-body"><div class="donut" style="background:' + gradient + '" role="img" aria-label="Distribución de gastos por categoría en ' + escapeHtml(label) + '"><div class="donut-center"><small>Total</small><strong>' + money(total) + '</strong></div></div><ul class="legend">' + list + '</ul></div></section>';
+}
+
+function transactionRow(item, compact) {
+  const category = categoryById(item.categoryId);
+  return '<button class="transaction-row' + (compact ? ' is-compact' : '') + '" type="button" data-edit-transaction="' + escapeHtml(item.id) + '">' +
+    categoryIcon(category) +
+    '<span class="transaction-detail"><strong>' + escapeHtml(item.title) + '</strong><small>' + (item.note ? escapeHtml(item.note) + ' <span class="detail-separator">·</span> ' : '') + escapeHtml(category ? category.name : 'Sin categoría') + ' <span class="detail-separator">·</span> ' + prettyDate(item.date) + (isSavingsEntry(item) && savingsCurrency(item) !== 'ARS' ? ' <span class="detail-separator">·</span> ' + escapeHtml(formatSavings(savingsCurrency(item), savingsUnits(item))) + ' ahorrados' : '') + '</small></span>' +
+    '<span class="transaction-amount ' + item.kind + '">' + (item.kind === 'income' ? '+ ' : '- ') + money(item.amount) + '</span>' +
+    icon('arrowRight', 17) + '</button>';
+}
+
+function recentPanel() {
+  const recent = selectedTransactions().slice(0, 4);
+  return '<section class="panel recent-panel"><div class="panel-heading"><div><p class="section-eyebrow">ACTIVIDAD</p><h2>Movimientos del mes</h2></div><button class="text-button" data-route="transactions" type="button">Ver todos ' + icon('arrowRight', 16) + '</button></div>' +
+    '<div class="transaction-list">' + (recent.length ? recent.map(function (item) { return transactionRow(item, true); }).join('') : '<div class="empty-state">No hay movimientos en este mes.</div>') + '</div></section>';
+}
+
+function renderHome() {
+  const t = totals();
+  const header = pageHeader('TU PANORAMA', 'Tu dinero, claro.', 'Todo lo importante de tus gastos en un solo lugar.',
+    '<button class="button button-outline connect-button" data-action="show-qr" type="button">' + icon('phone', 18) + '<span>Conectar iPhone</span>' + icon('arrowRight', 17) + '</button>');
+  return '<div class="home-page">' + header +
+    '<div class="mobile-month"><span>Tu saldo, de un vistazo</span></div>' +
+    '<div class="summary-grid">' + summaryCard(t) +
+      metricCard('Ingresos del mes', t.income, 'income', 'arrowUp') +
+      metricCard('Gastos del mes', t.expense, 'expense', 'arrowDown') +
+      '<button class="add-card" data-action="add-transaction" type="button"><span class="add-card-icon">' + icon('plus', 25) + '</span><strong>Agregar movimiento</strong><small>Gasto o ingreso en segundos</small></button></div>' +
+    '<section class="period-bar"><div class="period-copy"><p class="section-eyebrow">ANÁLISIS MENSUAL</p><strong>Elegí un mes para ver sus gráficos</strong></div><div class="period-actions">' + periodPicker(true) + '<button class="period-annual-button" data-route="annual" type="button">Resumen anual ' + icon('arrowRight', 16) + '</button></div></section>' +
+    '<div class="home-grid">' + renderChart() + recentPanel() + categoryBreakdown() + '</div></div>';
+}
+
+function annualChart(items) {
+  const monthNames = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+  const values = monthNames.map(function () { return { income: 0, expense: 0 }; });
+  items.forEach(function (item) { values[Number(item.date.slice(5, 7)) - 1][item.kind] += item.amount; });
+  const maximum = Math.max(100000, ...values.flatMap(function (value) { return [value.income, value.expense]; }));
+  const columns = values.map(function (value, index) {
+    const month = annualYear + '-' + String(index + 1).padStart(2, '0');
+    const incomeHeight = value.income ? Math.max(4, value.income / maximum * 100) : 0;
+    const expenseHeight = value.expense ? Math.max(4, value.expense / maximum * 100) : 0;
+    return '<button class="annual-month" type="button" data-annual-month="' + month + '" aria-label="' + escapeHtml(monthLabel(month)) + ': ingresos ' + money(value.income) + ', gastos ' + money(value.expense) + '. Ver mes">' +
+      '<span class="annual-bar-pair"><span class="annual-bar income" style="height:' + incomeHeight + '%"></span><span class="annual-bar expense" style="height:' + expenseHeight + '%"></span></span><span class="annual-month-label">' + monthNames[index] + '</span></button>';
+  }).join('');
+  return '<section class="panel annual-chart-panel"><div class="panel-heading"><div><p class="section-eyebrow">MES A MES</p><h2>Ingresos y gastos</h2></div><span class="panel-period">' + annualYear + '</span></div>' +
+    (items.length ? '<div class="annual-chart-scroll"><div class="annual-chart"><div class="annual-chart-grid"><span>' + shortMoney(maximum) + '</span><span>' + shortMoney(Math.round(maximum / 2)) + '</span><span>$ 0</span></div><div class="annual-columns" role="group" aria-label="Movimientos por mes en ' + annualYear + '">' + columns + '</div></div></div><div class="annual-chart-footer"><span class="annual-legend"><i class="income"></i> Ingresos <i class="expense"></i> Gastos</span><span>Tocá un mes para verlo en detalle.</span></div>'
+      : '<div class="chart-empty">' + icon('chart', 26) + '<strong>Sin movimientos en ' + annualYear + '</strong><span>Probá otro año o agregá un movimiento.</span></div>') + '</section>';
+}
+
+function renderAnnual() {
+  const items = yearTransactions(annualYear);
+  const income = items.filter(function (item) { return item.kind === 'income'; }).reduce(function (sum, item) { return sum + item.amount; }, 0);
+  const expense = items.filter(function (item) { return item.kind === 'expense'; }).reduce(function (sum, item) { return sum + item.amount; }, 0);
+  const saved = savingsBalances(items);
+  const stat = function (label, value, kind, iconName) { return '<div class="annual-stat ' + kind + '"><span>' + icon(iconName, 19) + label + '</span><strong>' + money(value) + '</strong></div>'; };
+  const savingsValues = SAVINGS_CURRENCIES.concat(saved.EUR !== 0 ? [LEGACY_EUR] : []).filter(function (currency) { return saved[currency.code] !== 0; }).map(function (currency) {
+    return '<strong>' + escapeHtml(formatSavings(currency.code, saved[currency.code])) + '</strong>';
+  }).join('') || '<strong>Sin aportes</strong>';
+  return '<div class="annual-page">' + pageHeader('TODO EL AÑO', 'Resumen anual', 'Compará tus ingresos, gastos y ahorros durante el año.', '') +
+    '<div class="annual-period-bar"><button class="period-annual-button" data-route="home" type="button">' + icon('chevronLeft', 16) + ' Volver al mes</button><div class="annual-year-controls"><button class="period-step" type="button" data-annual-year-shift="-1" aria-label="Año anterior">' + icon('chevronLeft', 17) + '</button><strong>' + annualYear + '</strong><button class="period-step" type="button" data-annual-year-shift="1" aria-label="Año siguiente">' + icon('arrowRight', 17) + '</button></div></div>' +
+    '<div class="annual-stats">' + stat('Ingresos', income, 'income', 'arrowUp') + stat('Gastos', expense, 'expense', 'arrowDown') + stat('Resultado', income - expense, 'result', 'wallet') + '<div class="annual-stat savings"><span>' + icon('savings', 19) + ' Ahorro neto</span><div class="annual-savings-values">' + savingsValues + '</div></div></div>' +
+    '<div class="annual-grid">' + annualChart(items) + categoryBreakdown(items, String(annualYear)) + '</div></div>';
+}
+
+function renderSavings() {
+  const items = savingsTransactions();
+  const saved = savingsBalances(items);
+  const deposits = items.filter(function (item) { return item.categoryId === 'savings'; }).length;
+  const withdrawals = items.filter(function (item) { return item.categoryId === 'savings-return'; }).length;
+  const shownCurrencies = SAVINGS_CURRENCIES.concat(items.some(function (item) { return savingsCurrency(item) === 'EUR'; }) ? [LEGACY_EUR] : []);
+  const currencyRows = shownCurrencies.map(function (currency) {
+    return '<div class="savings-currency-row"><span class="savings-currency-code">' + currency.code + '</span><span class="savings-currency-name">' + currency.short + '</span><strong>' + escapeHtml(formatSavings(currency.code, saved[currency.code])) + '</strong></div>';
+  }).join('');
+  const actions = '<button class="button button-primary" data-action="add-savings" type="button">' + icon('plus', 18) + ' Agregar ahorro</button>';
+  return '<div class="savings-page">' + pageHeader('TU RESERVA', 'Ahorros', 'Anotá lo que separás y mirá cuánto llevás guardado.', actions) +
+    '<div class="savings-overview"><section class="savings-hero"><span class="savings-hero-icon">' + icon('savings', 24) + '</span><p>Tu ahorro, moneda por moneda</p><div class="savings-currency-list">' + currencyRows + '</div><span class="savings-no-conversion">Cada saldo se muestra por separado.</span><button class="button button-outline" data-action="withdraw-savings" type="button"' + (Object.values(saved).some(function (amount) { return amount > 0; }) ? '' : ' disabled') + '>Registrar retiro ' + icon('arrowRight', 16) + '</button></section>' +
+      '<section class="panel savings-explainer"><p class="section-eyebrow">CÓMO FUNCIONA</p><h2>Un gasto que suma a tus ahorros</h2><p>Cada aporte aparece como gasto en ARS en Movimientos. Si guardás dólares, cargás también cuánto te costaron en pesos. No se usa una cotización automática.</p><div class="savings-mini-stats"><div><span>Aportes</span><strong>' + deposits + '</strong></div><div><span>Retiros</span><strong>' + withdrawals + '</strong></div></div></section></div>' +
+    '<section class="panel savings-history"><div class="panel-heading"><div><p class="section-eyebrow">HISTORIAL</p><h2>Aportes y retiros</h2></div><span class="panel-period">Todos los meses</span></div><div class="transaction-list">' + (items.length ? items.map(savingsRow).join('') : '<div class="empty-state"><strong>Todavía no anotaste ahorros</strong><span>Agregá un aporte para empezar.</span></div>') + '</div></section></div>';
+}
+
+function savingsRow(item) {
+  const currency = savingsCurrency(item);
+  const deposit = item.categoryId === 'savings';
+  return '<button class="transaction-row savings-row" type="button" data-edit-savings="' + escapeHtml(item.id) + '">' + categoryIcon(categoryById(item.categoryId)) +
+    '<span class="transaction-detail"><strong>' + escapeHtml(item.title) + '</strong><small>' + (deposit ? 'Aporte' : 'Retiro') + ' <span class="detail-separator">·</span> ' + prettyDate(item.date) + ' <span class="detail-separator">·</span> ' + (deposit ? 'Gastaste ' : 'Recibiste ') + money(item.amount) + ' ARS</small></span>' +
+    '<span class="transaction-amount ' + (deposit ? 'income' : 'expense') + '">' + (deposit ? '+ ' : '- ') + escapeHtml(formatSavings(currency, savingsUnits(item))) + '</span>' + icon('arrowRight', 17) + '</button>';
+}
+
+function renderTransactions() {
+  const visible = selectedTransactions().filter(function (item) {
+    const category = categoryById(item.categoryId);
+    const matchesFilter = filter === 'all' || item.kind === filter;
+    const matchesQuery = !query || (item.title + ' ' + (category ? category.name : '')).toLocaleLowerCase('es-AR').includes(query.toLocaleLowerCase('es-AR'));
+    return matchesFilter && matchesQuery;
+  });
+  const actions = '<button class="button button-primary" data-action="add-transaction" type="button">' + icon('plus', 18) + ' Agregar movimiento</button>';
+  return pageHeader('TU HISTORIAL', 'Movimientos', 'Encontrá y editá cada ingreso o gasto.', actions, 'transactions-header') +
+    '<div class="section-toolbar"><div class="filter-tabs" role="group" aria-label="Tipo de movimiento">' +
+      ['all', 'expense', 'income'].map(function (value) {
+        const label = { all: 'Todos', expense: 'Gastos', income: 'Ingresos' }[value];
+        return '<button type="button" data-filter="' + value + '" class="' + (filter === value ? 'selected' : '') + '">' + label + '</button>';
+      }).join('') + '</div>' +
+      '<div class="toolbar-right"><label class="search-field">' + icon('search', 17) + '<input id="transaction-search" placeholder="Buscar movimiento" value="' + escapeHtml(query) + '" aria-label="Buscar movimiento" /></label>' + periodPicker(false) + '</div></div>' +
+    '<section class="panel all-transactions"><div class="list-heading"><span>Movimiento</span><span>Categoría</span><span>Fecha</span><span>Importe</span></div>' +
+      '<div class="transaction-list">' + (visible.length ? visible.map(function (item) { return transactionRow(item, false); }).join('') : '<div class="empty-state"><strong>Sin movimientos para mostrar</strong><span>Probá otro mes o agregá uno nuevo.</span></div>') + '</div></section>';
+}
+
+function categoryRow(category, index, list) {
+  const hasItems = data.transactions.some(function (item) { return item.categoryId === category.id; });
+  const isSavings = category.id === 'savings' || category.id === 'savings-return';
+  return '<div class="category-row" draggable="true" data-category-row="' + escapeHtml(category.id) + '">' +
+    '<span class="drag-handle" aria-hidden="true">' + icon('grip', 20) + '</span><button class="category-open" type="button" data-category-detail="' + escapeHtml(category.id) + '" aria-label="Ver análisis de ' + escapeHtml(category.name) + '">' + categoryIcon(category) +
+    '<span class="category-detail"><strong>' + escapeHtml(category.name) + '</strong><small>' + (isSavings ? 'Vinculada a Ahorros' : hasItems ? 'Ver análisis mensual' : 'Sin movimientos') + '</small></span></button>' +
+    '<div class="category-row-actions"><button class="move-arrow" type="button" data-category-move="' + category.id + '" data-direction="-1" aria-label="Subir ' + escapeHtml(category.name) + '"' + (index === 0 ? ' disabled' : '') + '>' + icon('arrowUp', 17) + '</button>' +
+    '<button class="move-arrow" type="button" data-category-move="' + category.id + '" data-direction="1" aria-label="Bajar ' + escapeHtml(category.name) + '"' + (index === list.length - 1 ? ' disabled' : '') + '>' + icon('arrowDown', 17) + '</button>' +
+    '<button class="icon-button subtle" type="button" data-edit-category="' + category.id + '" aria-label="Editar ' + escapeHtml(category.name) + '">' + icon('edit', 18) + '</button></div></div>';
+}
+
+function renderCategories() {
+  const list = data.categories.filter(function (category) { return category.kind === categoryKind; });
+  return pageHeader('A TU MANERA', 'Categorías', 'Cambiá los nombres y el orden cuando quieras.',
+    '<button class="button button-primary" data-action="add-category" type="button">' + icon('plus', 17) + ' Nueva categoría</button>') +
+    '<div class="section-toolbar"><div class="filter-tabs" role="group" aria-label="Tipo de categoría">' +
+      '<button type="button" data-category-kind="expense" class="' + (categoryKind === 'expense' ? 'selected' : '') + '">Gastos</button>' +
+      '<button type="button" data-category-kind="income" class="' + (categoryKind === 'income' ? 'selected' : '') + '">Ingresos</button></div>' +
+      '<p class="reorder-hint">' + icon('grip', 17) + ' Arrastrá en PC o usá las flechas en el iPhone.</p></div>' +
+    '<section class="panel category-panel"><div class="category-list">' + list.map(function (category, index) { return categoryRow(category, index, list); }).join('') + '</div></section>' +
+    '<div class="info-banner">' + icon('info', 19) + '<div><strong>¿Querés mover un gasto?</strong><span>Entrá en Movimientos, tocá el gasto y elegí otra categoría.</span></div><button class="text-button" data-route="transactions" type="button">Ir a movimientos ' + icon('arrowRight', 15) + '</button></div>';
+}
+
+function renderCategoryDetail() {
+  const category = categoryById(selectedCategoryId);
+  if (!category) return renderCategories();
+  const items = selectedTransactions().filter(function (item) { return item.categoryId === category.id; });
+  const groups = conceptGroups(category.id, items).sort(function (a, b) { return b.total - a.total || a.title.localeCompare(b.title, 'es-AR'); });
+  const allGroups = conceptGroups(category.id);
+  if (conceptFilter && !groups.some(function (group) { return group.key === conceptFilter; })) conceptFilter = null;
+  const total = items.reduce(function (sum, item) { return sum + item.amount; }, 0);
+  const shownItems = conceptFilter ? items.filter(function (item) { return conceptKey(item.title) === conceptFilter; }) : items;
+  const selectedGroup = groups.find(function (group) { return group.key === conceptFilter; });
+  const groupRows = groups.length ? groups.map(function (group) {
+    const percent = total ? Math.round(group.total / total * 100) : 0;
+    const percentLabel = group.total > 0 && percent === 0 ? '&lt;1%' : percent + '%';
+    return '<button class="concept-row' + (conceptFilter === group.key ? ' selected' : '') + '" type="button" data-concept-filter="' + escapeHtml(group.key) + '" aria-pressed="' + String(conceptFilter === group.key) + '"><span class="concept-row-head"><strong>' + escapeHtml(group.title) + '</strong><span>' + money(group.total) + ' <small>' + percentLabel + '</small></span></span><span class="concept-track"><span style="width:' + (group.total / total * 100).toFixed(1) + '%"></span></span><small>' + group.count + (group.count === 1 ? ' movimiento' : ' movimientos') + '</small></button>';
+  }).join('') : '<div class="chart-empty">' + icon('chart', 26) + '<strong>Sin movimientos en este mes</strong><span>Elegí otro período o agregá uno nuevo.</span></div>';
+  return '<div class="category-detail-page" style="--category-accent:' + toneColor(category.tone) + '">' +
+    '<button class="back-button category-back" data-route="categories" type="button">' + icon('chevronLeft', 17) + ' Categorías</button>' +
+    pageHeader('ANÁLISIS DE CATEGORÍA', escapeHtml(category.name), category.kind === 'income' ? 'Mirá de dónde vienen tus ingresos.' : 'Descubrí en qué se fue el dinero.', '<button class="button button-primary" type="button" data-add-category-transaction="' + escapeHtml(category.id) + '">' + icon('plus', 17) + ' Agregar movimiento</button>') +
+    '<section class="period-bar category-period"><div class="period-copy"><p class="section-eyebrow">PERÍODO</p><strong>Elegí un mes para analizar</strong></div>' + periodPicker(true) + '</section>' +
+    '<div class="category-stats"><div class="category-total">' + categoryIcon(category, 23) + '<span>' + (category.kind === 'income' ? 'Ingresos del mes' : 'Gastos del mes') + '</span><strong>' + money(total) + '</strong></div><div><span>Movimientos</span><strong>' + items.length + '</strong></div><div><span>Comercios o conceptos</span><strong>' + groups.length + '</strong></div></div>' +
+    '<div class="category-detail-grid">' + renderChart(shownItems, selectedGroup ? escapeHtml(selectedGroup.title) + ' por semana' : category.kind === 'income' ? 'Ingresos por semana' : 'Gastos por semana') +
+    '<section class="panel concepts-panel"><div class="panel-heading"><div><p class="section-eyebrow">DENTRO DE ' + escapeHtml(category.name.toLocaleUpperCase('es-AR')) + '</p><h2>Por comercio o concepto</h2></div>' + (allGroups.length > 1 ? '<button class="text-button" type="button" data-action="merge-concepts">Unir nombres</button>' : '') + '</div><div class="concept-list">' + groupRows + '</div></section></div>' +
+    '<section class="panel category-history"><div class="panel-heading"><div><p class="section-eyebrow">HISTORIAL</p><h2>' + (selectedGroup ? escapeHtml(selectedGroup.title) : 'Movimientos del mes') + '</h2></div>' + (selectedGroup ? '<button class="text-button" data-concept-filter="" type="button">Ver todos</button>' : '<span class="panel-period">' + items.length + (items.length === 1 ? ' movimiento' : ' movimientos') + '</span>') + '</div><div class="transaction-list">' + (shownItems.length ? shownItems.map(function (item) { return transactionRow(item, false); }).join('') : '<div class="empty-state">No hay movimientos en este período.</div>') + '</div></section></div>';
+}
+
+function renderSettings() {
+  if (LIVE) {
+    const devices = desktopInfo.devices.map(function (device) {
+      return '<div class="linked-device"><span>' + icon('phone', 19) + '<strong>' + escapeHtml(device.name) + '</strong></span><button class="text-button" data-revoke-device="' + escapeHtml(device.id) + '" type="button">Revocar</button></div>';
+    }).join('');
+    return pageHeader('PREFERENCIAS', 'Ajustes', 'Tu dinero y tus dispositivos, bajo tu control.', '') +
+      '<div class="settings-grid"><section class="panel settings-panel"><div class="settings-heading"><span class="settings-icon">' + icon('sun', 20) + '</span><div><h2>Apariencia</h2><p>Elegí cómo querés ver MisGastos.</p></div></div>' +
+        '<div class="theme-options"><button type="button" data-theme-option="light" class="theme-option' + (data.theme === 'light' ? ' selected' : '') + '"><span class="theme-swatch light-swatch"></span><span><strong>Claro</strong><small>Marfil y colores suaves</small></span>' + (data.theme === 'light' ? icon('check', 18) : '') + '</button>' +
+        '<button type="button" data-theme-option="dark" class="theme-option' + (data.theme === 'dark' ? ' selected' : '') + '"><span class="theme-swatch dark-swatch"></span><span><strong>Oscuro</strong><small>Grafito y contraste sereno</small></span>' + (data.theme === 'dark' ? icon('check', 18) : '') + '</button></div></section>' +
+      '<section class="panel settings-panel"><div class="settings-heading"><span class="settings-icon">' + icon('wallet', 20) + '</span><div><h2>Saldo inicial</h2><p>' + money(data.openingBalance) + '</p></div></div><button class="setting-action" data-action="edit-opening-balance" type="button"><span>' + icon('edit', 18) + ' Cambiar saldo inicial</span>' + icon('arrowRight', 18) + '</button></section>' +
+      '<section class="panel settings-panel"><div class="settings-heading"><span class="settings-icon">' + icon('phone', 20) + '</span><div><h2>Tu iPhone</h2><p>' + (DESKTOP ? 'Vinculá y revocá dispositivos desde esta PC.' : 'Este celular está vinculado a tu PC.') + '</p></div></div>' +
+        (DESKTOP ? '<button class="setting-action" data-action="show-qr" type="button"><span>' + icon('qr', 18) + ' Conectar iPhone con QR</span>' + icon('arrowRight', 18) + '</button>' + (devices || '<p class="settings-note">Todavía no hay celulares vinculados.</p>') : '') + '</section>' +
+      (DESKTOP ? '<section class="panel settings-panel"><div class="settings-heading"><span class="settings-icon">' + icon('download', 20) + '</span><div><h2>Copias de seguridad</h2><p>Se guarda una copia local diaria cuando cambiás datos.</p></div></div>' +
+        '<button class="setting-action" data-action="export-data" type="button"><span>' + icon('download', 18) + ' Exportar mis datos</span>' + icon('arrowRight', 18) + '</button>' +
+        '<button class="setting-action" data-action="restore-data" type="button"><span>' + icon('reset', 18) + ' Restaurar una copia</span>' + icon('arrowRight', 18) + '</button><input id="restore-file" type="file" accept=".json,application/json" hidden />' +
+        '<p class="settings-note">Copias automáticas en ' + escapeHtml(desktopInfo.backupDir || 'la carpeta de datos de MisGastos') + '</p></section>' : '') + '</div>';
+  }
+  return pageHeader('PREFERENCIAS', 'Ajustes', 'Personalizá esta vista previa y probá el enlace con tu iPhone.', '') +
+    '<div class="settings-grid"><section class="panel settings-panel"><div class="settings-heading"><span class="settings-icon">' + icon('sun', 20) + '</span><div><h2>Apariencia</h2><p>Elegí cómo querés ver MisGastos.</p></div></div>' +
+      '<div class="theme-options"><button type="button" data-theme-option="light" class="theme-option' + (data.theme === 'light' ? ' selected' : '') + '"><span class="theme-swatch light-swatch"></span><span><strong>Claro</strong><small>Marfil y colores suaves</small></span>' + (data.theme === 'light' ? icon('check', 18) : '') + '</button>' +
+      '<button type="button" data-theme-option="dark" class="theme-option' + (data.theme === 'dark' ? ' selected' : '') + '"><span class="theme-swatch dark-swatch"></span><span><strong>Oscuro</strong><small>Grafito y contraste sereno</small></span>' + (data.theme === 'dark' ? icon('check', 18) : '') + '</button></div></section>' +
+    '<section class="panel settings-panel"><div class="settings-heading"><span class="settings-icon">' + icon('phone', 20) + '</span><div><h2>Tu iPhone</h2><p>' + (data.linked ? 'iPhone vinculado en esta demostración.' : 'Probá cómo sería el primer enlace por QR.') + '</p></div></div>' +
+      '<button class="setting-action" data-action="open-pair" type="button"><span>' + icon('qr', 18) + ' Ver flujo de vinculación</span>' + icon('arrowRight', 18) + '</button>' +
+      '<button class="setting-action" data-action="show-qr" type="button"><span>' + icon('phone', 18) + ' Ver QR en la PC</span>' + icon('arrowRight', 18) + '</button></section>' +
+    '<section class="panel settings-panel"><div class="settings-heading"><span class="settings-icon">' + icon('reset', 20) + '</span><div><h2>Datos de demostración</h2><p>Son ficticios y se guardan solo en este navegador.</p></div></div>' +
+      '<button class="setting-action" data-action="reset-demo" type="button"><span>' + icon('reset', 18) + ' Restaurar ejemplo original</span>' + icon('arrowRight', 18) + '</button></section></div>' +
+    '<p class="settings-note">Esta es una vista de diseño. No guarda datos financieros reales ni conecta dispositivos.</p>';
+}
+
+function qrMarkup() {
+  const size = 25;
+  let cells = '';
+  function finder(x, y, ox, oy) {
+    const dx = x - ox;
+    const dy = y - oy;
+    if (dx < 0 || dx > 6 || dy < 0 || dy > 6) return null;
+    return dx === 0 || dx === 6 || dy === 0 || dy === 6 || (dx >= 2 && dx <= 4 && dy >= 2 && dy <= 4);
+  }
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const a = finder(x, y, 0, 0);
+      const b = finder(x, y, 18, 0);
+      const c = finder(x, y, 0, 18);
+      const fixed = a !== null ? a : b !== null ? b : c !== null ? c : null;
+      const filled = fixed !== null ? fixed : ((x * 19 + y * 23 + x * y * 7 + (x ^ y) * 11) % 17) < 8;
+      cells += '<span class="' + (filled ? 'filled' : '') + '"></span>';
+    }
+  }
+  return '<div class="qr-art" aria-label="Representación visual de un QR de demostración">' + cells + '</div>';
+}
+
+function renderPairPage() {
+  const content = pairingStep === 'start'
+    ? '<p>Escaneá el QR que muestra MisGastos en tu PC o ingresá el código manualmente.</p><div class="scanner-preview"><div class="scan-corners">' + icon('qr', 90) + '</div><span>Vista de cámara simulada</span></div>' +
+      '<form id="pair-form" novalidate><label class="field-label" for="pair-code">Código de vinculación</label><input class="text-input pair-code" id="pair-code" name="code" autocomplete="off" maxlength="8" placeholder="A7F3K9M2" required />' +
+      '<button class="button button-primary full-width" type="submit">Continuar ' + icon('arrowRight', 17) + '</button></form>'
+    : pairingStep === 'pending'
+      ? '<div class="pair-status-symbol">' + icon('phone', 35) + '</div><h2>Esperando aprobación</h2><p>En la PC aparecería una solicitud para permitir el acceso de este iPhone.</p><button class="button button-primary full-width" data-action="simulate-approval" type="button">Simular aprobación en PC</button>'
+      : '<div class="pair-status-symbol success">' + icon('check', 38) + '</div><h2>iPhone vinculado</h2><p>En la app real, tus movimientos aparecerían acá al conectarte con tu PC.</p><button class="button button-primary full-width" data-route="home" type="button">Volver al inicio</button>';
+  return '<div class="pair-page"><button class="back-button" data-route="settings" type="button">' + icon('chevronLeft', 18) + ' Ajustes</button>' +
+    '<p class="eyebrow">ACCESO MÓVIL</p><h1>Vincular con tu PC</h1>' + content +
+    '<div class="pair-demo-note">' + icon('info', 17) + '<span>Demostración visual. Todavía no se activa la cámara ni se enlazan dispositivos.</span></div></div>';
+}
+
+function transactionModal() {
+  const item = modal.id ? data.transactions.find(function (entry) { return entry.id === modal.id; }) : null;
+  const kind = modal.kind || (item && item.kind) || 'expense';
+  const categories = data.categories.filter(function (entry) { return entry.kind === kind; });
+  const date = item ? item.date : lastDateOfMonth(selectedMonth);
+  return '<div class="modal-backdrop" data-action="close-modal"></div><div class="dialog transaction-dialog" role="dialog" aria-modal="true" aria-labelledby="dialog-title">' +
+    '<div class="dialog-head"><div><p class="eyebrow">MOVIMIENTO</p><h2 id="dialog-title">' + (item ? 'Editar movimiento' : 'Agregar movimiento') + '</h2></div><button class="icon-button" data-action="close-modal" type="button" aria-label="Cerrar">' + icon('close', 20) + '</button></div>' +
+    '<form id="transaction-form" novalidate><div class="kind-switch"><button type="button" data-modal-kind="expense" class="' + (kind === 'expense' ? 'selected' : '') + '">Gasto</button><button type="button" data-modal-kind="income" class="' + (kind === 'income' ? 'selected' : '') + '">Ingreso</button></div>' +
+    '<label class="field-label" for="amount">Monto</label><div class="amount-input"><span>$</span><input id="amount" name="amount" inputmode="numeric" type="number" min="1" step="1" value="' + (item ? item.amount : '') + '" placeholder="0" required autofocus /></div>' +
+    '<label class="field-label" for="title">Descripción</label><div class="description-autocomplete"><input class="text-input" id="title" name="title" maxlength="80" autocomplete="off" aria-autocomplete="list" aria-expanded="false" aria-controls="description-suggestions" value="' + escapeHtml(item ? item.title : '') + '" placeholder="' + (kind === 'income' ? '¿De dónde vino el ingreso?' : '¿En qué gastaste?') + '" required /><div id="description-suggestions" class="description-suggestions" role="listbox" hidden></div></div>' +
+    '<label class="field-label" for="transaction-note">Detalle <span class="field-optional">(opcional)</span></label><input class="text-input" id="transaction-note" name="note" maxlength="160" value="' + escapeHtml(item ? item.note || '' : '') + '" placeholder="Ejemplo: latte y medialuna" />' +
+    '<div class="form-row"><div>' + customSelect('category-picker', 'Categoría', 'category', item ? item.categoryId : modal.categoryId || '', categories.map(function (category) {
+      return { value: category.id, label: category.name, leading: '<span class="dropdown-symbol ' + toneClass(category.tone) + '"' + toneStyle(category.tone) + '>' + icon(category.icon, 16) + '</span>' };
+    }), 'form-dropdown') + '</div><div>' + datePicker(date) + '</div></div>' +
+    '<div class="dialog-actions">' + (item ? '<button class="button button-danger" type="button" data-action="delete-transaction">' + icon('trash', 17) + '<span>Eliminar</span></button>' : '') +
+      '<button class="button button-primary" type="submit">' + (item ? 'Guardar cambios' : kind === 'income' ? 'Guardar ingreso' : 'Guardar gasto') + '</button></div></form></div>';
+}
+
+function updateDescriptionSuggestions() {
+  const input = document.getElementById('title');
+  const list = document.getElementById('description-suggestions');
+  const category = document.querySelector('[data-dropdown="category-picker"] input[name="category"]');
+  if (!input || !list || !category) return;
+  const matches = matchingConcepts(category.value, input.value).filter(function (group) { return group.key !== conceptKey(input.value); });
+  list.innerHTML = matches.map(function (group, index) {
+    return '<button class="description-suggestion" type="button" role="option" id="description-suggestion-' + index + '" data-description-choice="' + escapeHtml(group.title) + '"><strong>' + escapeHtml(group.title) + '</strong><span>' + group.count + (group.count === 1 ? ' vez' : ' veces') + '</span></button>';
+  }).join('');
+  list.hidden = !matches.length;
+  input.setAttribute('aria-expanded', String(Boolean(matches.length)));
+  input.removeAttribute('aria-activedescendant');
+}
+
+function hideDescriptionSuggestions() {
+  const input = document.getElementById('title');
+  const list = document.getElementById('description-suggestions');
+  if (list) list.hidden = true;
+  if (input) { input.setAttribute('aria-expanded', 'false'); input.removeAttribute('aria-activedescendant'); }
+}
+
+function savingsModal() {
+  const item = modal.id ? data.transactions.find(function (entry) { return entry.id === modal.id; }) : null;
+  const action = item ? (item.categoryId === 'savings' ? 'deposit' : 'withdrawal') : modal.action;
+  const deposit = action === 'deposit';
+  const currency = item ? savingsCurrency(item) : 'ARS';
+  const date = item ? item.date : lastDateOfMonth(selectedMonth);
+  const balances = savingsBalances();
+  const availableCurrencies = SAVINGS_CURRENCIES.concat((currency === 'EUR' && item) || (!deposit && balances.EUR > 0) ? [LEGACY_EUR] : []);
+  const choices = availableCurrencies.filter(function (entry) { return deposit || balances[entry.code] > 0 || entry.code === currency && item; }).map(function (entry) {
+    return { value: entry.code, label: entry.name + ' (' + entry.code + ')', leading: '<span class="currency-option-code">' + entry.code + '</span>' };
+  });
+  return '<div class="modal-backdrop" data-action="close-modal"></div><div class="dialog savings-dialog" role="dialog" aria-modal="true" aria-labelledby="dialog-title">' +
+    '<div class="dialog-head"><div><p class="eyebrow">AHORROS</p><h2 id="dialog-title">' + (item ? deposit ? 'Editar aporte' : 'Editar retiro' : deposit ? 'Agregar ahorro' : 'Retirar de ahorros') + '</h2></div><button class="icon-button" data-action="close-modal" type="button" aria-label="Cerrar">' + icon('close', 20) + '</button></div>' +
+    '<form id="savings-form" novalidate><p class="savings-form-note">' + (deposit ? 'Se anotará como gasto en ARS y aumentará el ahorro en la moneda elegida.' : 'Se anotará como ingreso en ARS y disminuirá el ahorro en la moneda elegida.') + '</p>' +
+    customSelect('savings-currency', 'Moneda del ahorro', 'currency', currency, choices, 'form-dropdown') +
+    '<label class="field-label" for="savings-units">' + (deposit ? 'Monto que guardás' : 'Monto que retirás') + '</label><div class="amount-input"><span data-savings-currency-symbol>' + (currency === 'USD' ? 'US$' : currency === 'EUR' ? '€' : '$') + '</span><input id="savings-units" name="units" inputmode="decimal" type="number" min="0.01" step="0.01" value="' + (item ? savingsUnits(item) : '') + '" placeholder="0" required autofocus /></div>' +
+    '<div data-foreign-cost' + (currency === 'ARS' ? ' hidden' : '') + '><label class="field-label" for="savings-ars-amount">' + (deposit ? 'Costo en pesos (ARS)' : 'Pesos recibidos (ARS)') + '</label><div class="amount-input"><span>$</span><input id="savings-ars-amount" name="arsAmount" inputmode="numeric" type="number" min="1" step="1" value="' + (item && currency !== 'ARS' ? item.amount : '') + '" placeholder="0"' + (currency === 'ARS' ? '' : ' required') + ' /></div><p class="field-help">Ingresá el importe real. No se aplica una cotización automática.</p></div>' +
+    '<label class="field-label" for="savings-title">Descripción</label><input class="text-input" id="savings-title" name="title" maxlength="80" value="' + escapeHtml(item ? item.title : '') + '" placeholder="' + (deposit ? 'Ejemplo: Fondo de emergencia' : 'Ejemplo: Retiro para imprevisto') + '" required />' +
+    datePicker(date) +
+    (item ? '<button class="text-button savings-move-button" type="button" data-action="move-savings-category">Mover a otra categoría ' + icon('arrowRight', 15) + '</button>' : '') +
+    '<div class="dialog-actions">' + (item ? '<button class="button button-danger" type="button" data-action="delete-transaction">' + icon('trash', 17) + '<span>Eliminar</span></button>' : '') +
+    '<button class="button button-primary" type="submit">' + (deposit ? 'Guardar aporte' : 'Guardar retiro') + '</button></div></form></div>';
+}
+
+function categoryModal() {
+  const category = modal.id ? categoryById(modal.id) : null;
+  const selectedIcon = category && CATEGORY_ICON_CATALOG[category.icon] ? category.icon : 'basket';
+  const selectedTone = category ? category.tone : 'lavender';
+  const customColor = isCustomTone(selectedTone) ? selectedTone.toUpperCase() : '#7E6DCA';
+  const customSelected = isCustomTone(selectedTone);
+  return '<div class="modal-backdrop" data-action="close-modal"></div><div class="dialog category-dialog" role="dialog" aria-modal="true" aria-labelledby="dialog-title">' +
+    '<div class="dialog-head"><div><p class="eyebrow">CATEGORÍAS</p><h2 id="dialog-title">' + (category ? 'Editar categoría' : 'Nueva categoría') + '</h2></div><button class="icon-button" data-action="close-modal" type="button" aria-label="Cerrar">' + icon('close', 20) + '</button></div>' +
+    '<form id="category-form" novalidate><label class="field-label" for="category-name">Nombre</label><input class="text-input" id="category-name" name="name" maxlength="32" value="' + escapeHtml(category ? category.name : '') + '" placeholder="Ejemplo: Mascotas" required />' +
+    '<span class="field-label" id="icon-picker-label">Ícono</span><div class="category-icon-picker" role="group" aria-labelledby="icon-picker-label"><div class="icon-search-wrap">' + icon('search', 17) + '<input id="icon-search" type="search" placeholder="Buscar, por ejemplo: moto" autocomplete="off" aria-label="Buscar ícono" /></div>' +
+    '<input type="hidden" name="icon" value="' + escapeHtml(selectedIcon) + '" /><div class="icon-choice-grid" role="radiogroup" aria-label="Ícono de categoría">' +
+      Object.entries(CATEGORY_ICON_CATALOG).map(function (entry) { const name = entry[0], item = entry[1]; return '<button class="icon-choice' + (name === selectedIcon ? ' selected' : '') + '" type="button" role="radio" data-icon-choice="' + name + '" data-icon-search="' + escapeHtml(item.label + ' ' + item.keywords) + '" aria-checked="' + String(name === selectedIcon) + '" aria-label="' + escapeHtml(item.label) + '">' + icon(name, 20) + '<span>' + escapeHtml(item.label) + '</span></button>'; }).join('') +
+    '</div><p class="icon-empty" hidden>No encontramos ese ícono.</p></div>' +
+    '<span class="field-label">Color</span><div class="tone-options" role="group" aria-label="Color de categoría">' +
+      PRESET_TONES.map(function (tone) { return '<label class="tone-option tone-' + tone + '" aria-label="' + TONE_LABELS[tone] + '"><input type="radio" name="tone" value="' + tone + '"' + (selectedTone === tone ? ' checked' : '') + ' /><span></span></label>'; }).join('') +
+      '<input class="visually-hidden" type="radio" id="custom-tone-radio" name="tone" value="custom"' + (customSelected ? ' checked' : '') + ' /></div>' +
+    '<button class="custom-tone-toggle' + (customSelected ? ' selected' : '') + '" type="button" data-custom-tone-toggle aria-expanded="' + String(customSelected) + '"><span class="custom-tone-dot" style="background:' + customColor + '"></span><span>Color personalizado</span>' + icon('arrowDown', 16) + '</button>' +
+    '<div class="custom-tone-panel" data-custom-tone-panel' + (customSelected ? '' : ' hidden') + '><label class="custom-color-swatch" style="background:' + customColor + '" aria-label="Elegir color"><input id="category-color" type="color" value="' + customColor + '" /></label><div><label class="field-label" for="category-color-hex">Código HEX</label><input class="text-input color-hex-input" id="category-color-hex" name="customTone" maxlength="7" value="' + customColor + '" placeholder="#7E6DCA" spellcheck="false" /></div></div>' +
+    '<div class="dialog-actions">' + (category && category.id !== 'savings' && category.id !== 'savings-return' ? '<button class="button button-danger" type="button" data-action="delete-category">' + icon('trash', 17) + '<span>Eliminar</span></button>' : '') +
+      '<button class="button button-primary" type="submit">Guardar categoría</button></div></form></div>';
+}
+
+function qrModal() {
+  if (LIVE) {
+    const request = desktopInfo.pending[0];
+    const networks = desktopInfo.networks.map(function (option) { return '<button class="network-option' + (selectedNetwork === option.address ? ' selected' : '') + '" data-pair-address="' + escapeHtml(option.address) + '" type="button">' + escapeHtml(option.label) + '</button>'; }).join('');
+    return '<div class="modal-backdrop" data-action="close-modal"></div><div class="dialog qr-dialog" role="dialog" aria-modal="true" aria-labelledby="dialog-title">' +
+      '<div class="dialog-head"><div><p class="eyebrow">ACCESO MÓVIL</p><h2 id="dialog-title">Conectar iPhone</h2></div><button class="icon-button" data-action="close-modal" type="button" aria-label="Cerrar">' + icon('close', 20) + '</button></div>' +
+      (request ? '<div class="approval-icon">' + icon('phone', 30) + '</div><p class="qr-intro"><strong>' + escapeHtml(request.name) + '</strong> solicita acceso a tus gastos. Permití el acceso solo si es tu celular.</p><div class="approval-actions"><button class="button button-outline" data-pair-decision="deny" data-request-id="' + escapeHtml(request.id) + '" type="button">Rechazar</button><button class="button button-primary" data-pair-decision="approve" data-request-id="' + escapeHtml(request.id) + '" type="button">Permitir acceso</button></div>' :
+      '<p class="qr-intro">Elegí la conexión, escaneá el QR con Safari y aprobá la solicitud en esta PC.</p><div class="network-options">' + (networks || '<p>Conectá la PC a Wi-Fi o Tailscale para generar el QR.</p>') + '</div>' +
+      (pairingInfo ? '<div class="qr-wrap"><img class="real-qr" src="' + pairingInfo.qr + '" alt="QR para vincular el iPhone" /></div><p class="pair-url">' + escapeHtml(pairingInfo.url) + '</p><p class="qr-disclaimer">Este QR vence en 5 minutos. Fuera de casa, usá Tailscale en la PC y el iPhone.</p>' : '<p class="qr-disclaimer">Preparando QR...</p>')) + '</div>';
+  }
+  const pending = pairingStep === 'desktop-pending';
+  return '<div class="modal-backdrop" data-action="close-modal"></div><div class="dialog qr-dialog" role="dialog" aria-modal="true" aria-labelledby="dialog-title">' +
+    '<div class="dialog-head"><div><p class="eyebrow">ACCESO MÓVIL</p><h2 id="dialog-title">' + (pending ? 'Solicitud de iPhone' : 'Conectar iPhone') + '</h2></div><button class="icon-button" data-action="close-modal" type="button" aria-label="Cerrar">' + icon('close', 20) + '</button></div>' +
+    (pending
+      ? '<div class="approval-icon">' + icon('phone', 30) + '</div><p class="qr-intro">Un iPhone solicita acceso a MisGastos. En la app real, aprobarías un dispositivo concreto desde esta ventana.</p><div class="approval-actions"><button class="button button-outline" data-action="deny-pair" type="button">Rechazar</button><button class="button button-primary" data-action="approve-pair" type="button">Permitir acceso</button></div>'
+      : '<p class="qr-intro">Escaneá este código desde tu iPhone y aprobá la solicitud en esta PC.</p><div class="qr-wrap">' + qrMarkup() + '</div><div class="pair-code-display"><small>CÓDIGO MANUAL</small><strong>' + QR_CODE + '</strong></div>' +
+        '<button class="button button-outline full-width" data-action="simulate-request" type="button">Simular solicitud desde el iPhone</button><p class="qr-disclaimer">QR ilustrativo. El enlace real se implementará después de aprobar el diseño.</p>') +
+    '</div>';
+}
+
+function confirmationModal() {
+  const item = modal.action === 'delete-transaction' ? data.transactions.find(function (entry) { return entry.id === modal.id; }) : null;
+  const category = modal.action === 'delete-category' ? categoryById(modal.id) : null;
+  const device = modal.action === 'revoke-device' ? desktopInfo.devices.find(function (entry) { return entry.id === modal.id; }) : null;
+  const title = modal.action === 'reset' ? 'Restaurar el ejemplo' : modal.action === 'restore' ? 'Restaurar copia' : device ? 'Revocar dispositivo' : item ? 'Eliminar movimiento' : 'Eliminar categoría';
+  const description = modal.action === 'reset'
+    ? 'Se descartarán los cambios que hiciste en esta demostración y volverán los datos originales.'
+    : modal.action === 'restore' ? 'Se reemplazarán los datos actuales por los de la copia elegida. Antes se guardará una copia automática de seguridad.'
+    : device ? '¿Querés quitar el acceso de "' + escapeHtml(device.name) + '"? Tendrás que vincularlo otra vez por QR.'
+    : item ? '¿Querés eliminar "' + escapeHtml(item.title) + '"? Este movimiento dejará de aparecer en el saldo y los gráficos.'
+    : '¿Querés eliminar la categoría "' + escapeHtml(category ? category.name : '') + '"?';
+  const actionLabel = modal.action === 'reset' ? 'Restaurar ejemplo' : modal.action === 'restore' ? 'Restaurar copia' : device ? 'Revocar acceso' : 'Eliminar';
+  return '<div class="modal-backdrop" data-action="cancel-confirm"></div><div class="dialog confirmation-dialog" role="alertdialog" aria-modal="true" aria-labelledby="dialog-title" aria-describedby="confirm-description">' +
+    '<div class="dialog-head"><div><p class="eyebrow">CONFIRMACIÓN</p><h2 id="dialog-title">' + title + '</h2></div><button class="icon-button" data-action="cancel-confirm" type="button" aria-label="Cerrar">' + icon('close', 20) + '</button></div>' +
+    '<p class="confirm-description" id="confirm-description">' + description + '</p><div class="dialog-actions confirm-actions"><button class="button button-outline" data-action="cancel-confirm" type="button">Cancelar</button><button class="button button-danger" data-action="confirm-action" type="button">' + actionLabel + '</button></div></div>';
+}
+
+function mergeConceptsModal() {
+  const category = categoryById(modal.categoryId);
+  const groups = conceptGroups(modal.categoryId).sort(function (a, b) { return a.title.localeCompare(b.title, 'es-AR'); });
+  const choices = groups.map(function (group) { return { value: group.key, label: group.title }; });
+  return '<div class="modal-backdrop" data-action="close-modal"></div><div class="dialog merge-dialog" role="dialog" aria-modal="true" aria-labelledby="dialog-title">' +
+    '<div class="dialog-head"><div><p class="eyebrow">' + escapeHtml(category ? category.name.toLocaleUpperCase('es-AR') : 'CATEGORÍA') + '</p><h2 id="dialog-title">Unir nombres</h2></div><button class="icon-button" data-action="close-modal" type="button" aria-label="Cerrar">' + icon('close', 20) + '</button></div>' +
+    '<p class="savings-form-note">Si escribiste el mismo comercio de distintas formas, unificá sus movimientos para verlo en un solo gráfico.</p>' +
+    '<form id="merge-concepts-form" novalidate>' +
+      customSelect('merge-source', 'Nombre actual', 'source', groups[0] && groups[0].key, choices, 'form-dropdown') +
+      customSelect('merge-target', 'Unir con', 'target', groups[1] && groups[1].key, choices, 'form-dropdown') +
+      '<p class="merge-hint">Se cambiará la descripción de todos los movimientos de esta categoría que tengan el primer nombre. Montos, fechas y detalles se conservan.</p>' +
+      '<div class="dialog-actions"><button class="button button-outline" type="button" data-action="close-modal">Cancelar</button><button class="button button-primary" type="submit">Unir nombres</button></div></form></div>';
+}
+
+function renderModal() {
+  if (modal.type === 'transaction') return transactionModal();
+  if (modal.type === 'merge-concepts') return mergeConceptsModal();
+  if (modal.type === 'savings') return savingsModal();
+  if (modal.type === 'category') return categoryModal();
+  if (modal.type === 'qr') return qrModal();
+  if (modal.type === 'balance') return '<div class="modal-backdrop" data-action="close-modal"></div><div class="dialog" role="dialog" aria-modal="true" aria-labelledby="dialog-title"><div class="dialog-head"><div><p class="eyebrow">TUS DATOS</p><h2 id="dialog-title">Saldo inicial</h2></div><button class="icon-button" data-action="close-modal" type="button" aria-label="Cerrar">' + icon('close', 20) + '</button></div><form id="balance-form"><p class="savings-form-note">El saldo actual suma tus movimientos a este importe.</p><label class="field-label" for="opening-balance">Saldo inicial en pesos</label><div class="amount-input"><span>$</span><input id="opening-balance" name="balance" type="number" inputmode="numeric" step="1" value="' + data.openingBalance + '" required /></div><div class="dialog-actions"><button class="button button-outline" type="button" data-action="close-modal">Cancelar</button><button class="button button-primary" type="submit">Guardar saldo</button></div></form></div>';
+  if (modal.type === 'confirmation') return confirmationModal();
+  return '';
+}
+
+function render() {
+  document.body.classList.toggle('live-app', LIVE);
+  document.documentElement.dataset.theme = data.theme;
+  document.querySelector('meta[name="theme-color"]').setAttribute('content', data.theme === 'light' ? '#f6f4f0' : '#191b22');
+  let content = '';
+  if (route === 'home') content = renderHome();
+  else if (route === 'annual') content = renderAnnual();
+  else if (route === 'transactions') content = renderTransactions();
+  else if (route === 'categories') content = renderCategories();
+  else if (route === 'category-detail') content = renderCategoryDetail();
+  else if (route === 'savings') content = renderSavings();
+  else if (route === 'pair') content = renderPairPage();
+  else content = renderSettings();
+  document.getElementById('app').innerHTML = shell(content);
+  document.body.classList.toggle('modal-open', Boolean(modal));
+}
+
+function moveCategory(id, direction) {
+  const kind = (categoryById(id) || {}).kind;
+  const group = data.categories.filter(function (category) { return category.kind === kind; });
+  const index = group.findIndex(function (category) { return category.id === id; });
+  const other = group[index + direction];
+  if (!other) return;
+  const a = data.categories.findIndex(function (category) { return category.id === id; });
+  const b = data.categories.findIndex(function (category) { return category.id === other.id; });
+  [data.categories[a], data.categories[b]] = [data.categories[b], data.categories[a]];
+  saveData();
+  render();
+}
+
+function openTransaction(kind, id, categoryId) {
+  const item = id ? data.transactions.find(function (entry) { return entry.id === id; }) : null;
+  modal = { type: 'transaction', kind: item ? item.kind : kind, id: id || null, categoryId: categoryId || null };
+  render();
+  const amount = document.getElementById('amount');
+  if (amount && !id) amount.focus();
+}
+
+function openSavings(action, id) {
+  const item = id ? data.transactions.find(function (entry) { return entry.id === id; }) : null;
+  modal = { type: 'savings', action: item ? item.categoryId === 'savings' ? 'deposit' : 'withdrawal' : action, id: id || null };
+  render();
+  if (!id) document.getElementById('savings-units')?.focus();
+}
+
+function updateSavingsCurrencyUi(form, currency) {
+  const foreign = currency !== 'ARS';
+  const costField = form.querySelector('[data-foreign-cost]');
+  costField.hidden = !foreign;
+  costField.querySelector('input').required = foreign;
+  form.querySelector('[data-savings-currency-symbol]').textContent = currency === 'USD' ? 'US$' : currency === 'EUR' ? '€' : '$';
+}
+
+function navigate(next) {
+  if (next === 'annual') annualYear = Number(selectedMonth.slice(0, 4));
+  route = next;
+  modal = null;
+  window.scrollTo({ top: 0, behavior: 'instant' });
+  render();
+}
+
+function closeDropdowns(except) {
+  document.querySelectorAll('.custom-select.is-open').forEach(function (dropdown) {
+    if (dropdown === except) return;
+    dropdown.classList.remove('is-open');
+    dropdown.querySelector('[data-dropdown-trigger]').setAttribute('aria-expanded', 'false');
+  });
+}
+
+function openDropdown(dropdown, focusOption) {
+  closeDropdowns(dropdown);
+  dropdown.classList.add('is-open');
+  dropdown.querySelector('[data-dropdown-trigger]').setAttribute('aria-expanded', 'true');
+  if (focusOption) {
+    const selected = dropdown.querySelector('[data-dropdown-option][aria-selected="true"]');
+    (selected || dropdown.querySelector('[data-dropdown-option]'))?.focus();
+  }
+}
+
+function closeDatePickers(except) {
+  document.querySelectorAll('.date-picker.is-open').forEach(function (picker) {
+    if (picker === except) return;
+    picker.classList.remove('is-open');
+    picker.querySelector('[data-date-trigger]').setAttribute('aria-expanded', 'false');
+  });
+}
+
+function closePeriodPickers(except) {
+  document.querySelectorAll('.period-picker.is-open').forEach(function (picker) {
+    if (picker === except) return;
+    picker.classList.remove('is-open');
+    picker.querySelector('[data-period-trigger]').setAttribute('aria-expanded', 'false');
+  });
+}
+
+document.addEventListener('click', function (event) {
+  if (event.target.matches('.custom-select.is-open')) { closeDropdowns(); return; }
+  if (event.target.matches('.date-picker.is-open')) { closeDatePickers(); return; }
+  if (event.target.matches('.period-picker.is-open')) { closePeriodPickers(); return; }
+  const annualMonth = event.target.closest('[data-annual-month]');
+  if (annualMonth) { selectedMonth = annualMonth.dataset.annualMonth; navigate('home'); return; }
+  const annualShift = event.target.closest('[data-annual-year-shift]');
+  if (annualShift) {
+    const nextYear = annualYear + Number(annualShift.dataset.annualYearShift);
+    if (nextYear >= 1900 && nextYear <= 9999) { annualYear = nextYear; render(); }
+    return;
+  }
+  const periodMonth = event.target.closest('[data-period-month]');
+  if (periodMonth) {
+    selectedMonth = periodMonth.dataset.periodMonth;
+    render();
+    document.querySelector('[data-period-trigger]')?.focus();
+    return;
+  }
+  const periodYearShift = event.target.closest('[data-period-year-shift]');
+  if (periodYearShift) {
+    const picker = periodYearShift.closest('[data-period-picker]');
+    const year = Number(picker.dataset.viewYear) + Number(periodYearShift.dataset.periodYearShift);
+    if (year < 1900 || year > 9999) return;
+    picker.dataset.viewYear = year;
+    picker.querySelector('.period-popover').innerHTML = periodYearMarkup(year);
+    picker.querySelector('[data-period-year-shift="' + periodYearShift.dataset.periodYearShift + '"]').focus();
+    return;
+  }
+  const periodTrigger = event.target.closest('[data-period-trigger]');
+  if (periodTrigger) {
+    const picker = periodTrigger.closest('[data-period-picker]');
+    const wasOpen = picker.classList.contains('is-open');
+    closeDropdowns(); closeDatePickers(); closePeriodPickers();
+    if (!wasOpen) { picker.classList.add('is-open'); periodTrigger.setAttribute('aria-expanded', 'true'); }
+    return;
+  }
+  const periodShift = event.target.closest('[data-period-shift]');
+  if (periodShift) { shiftSelectedMonth(Number(periodShift.dataset.periodShift)); return; }
+  const calendarDay = event.target.closest('[data-calendar-day]');
+  if (calendarDay) {
+    const picker = calendarDay.closest('[data-date-picker]');
+    const date = calendarDay.dataset.calendarDay;
+    picker.querySelector('[name="date"]').value = date;
+    picker.querySelector('[data-date-label]').textContent = numericDate(date);
+    closeDatePickers();
+    picker.querySelector('[data-date-trigger]').focus();
+    return;
+  }
+  const calendarShift = event.target.closest('[data-calendar-shift]');
+  if (calendarShift) {
+    const picker = calendarShift.closest('[data-date-picker]');
+    const parts = picker.dataset.calendarMonth.split('-').map(Number);
+    const next = new Date(parts[0], parts[1] - 1 + Number(calendarShift.dataset.calendarShift), 1);
+    const month = next.getFullYear() + '-' + String(next.getMonth() + 1).padStart(2, '0');
+    picker.dataset.calendarMonth = month;
+    picker.querySelector('.date-popover').innerHTML = calendarMarkup(month, picker.querySelector('[name="date"]').value);
+    picker.querySelector('[data-calendar-shift="' + calendarShift.dataset.calendarShift + '"]').focus();
+    return;
+  }
+  const dateTrigger = event.target.closest('[data-date-trigger]');
+  if (dateTrigger) {
+    const picker = dateTrigger.closest('[data-date-picker]');
+    const wasOpen = picker.classList.contains('is-open');
+    closeDropdowns(); closePeriodPickers();
+    closeDatePickers();
+    if (!wasOpen) {
+      picker.classList.add('is-open');
+      dateTrigger.setAttribute('aria-expanded', 'true');
+    }
+    return;
+  }
+  const dropdownOption = event.target.closest('[data-dropdown-option]');
+  if (dropdownOption) {
+    const dropdown = dropdownOption.closest('[data-dropdown]');
+    const value = dropdownOption.dataset.value;
+    if (dropdown.dataset.dropdown === 'month-picker') {
+      selectedMonth = value;
+      render();
+      document.querySelector('[data-dropdown="month-picker"] [data-dropdown-trigger]')?.focus();
+    } else {
+      dropdown.querySelector('input[type="hidden"]').value = value;
+      dropdown.querySelector('.dropdown-value').innerHTML = dropdownOption.querySelector('.dropdown-option-content').innerHTML;
+      dropdown.querySelectorAll('[data-dropdown-option]').forEach(function (option) {
+        option.setAttribute('aria-selected', String(option === dropdownOption));
+      });
+      closeDropdowns();
+      if (dropdown.dataset.dropdown === 'savings-currency') updateSavingsCurrencyUi(dropdown.closest('form'), value);
+      if (dropdown.dataset.dropdown === 'category-picker') updateDescriptionSuggestions();
+      dropdown.querySelector('[data-dropdown-trigger]').focus();
+    }
+    return;
+  }
+  const dropdownTrigger = event.target.closest('[data-dropdown-trigger]');
+  if (dropdownTrigger) {
+    const dropdown = dropdownTrigger.closest('[data-dropdown]');
+    closeDatePickers(); closePeriodPickers();
+    if (dropdown.classList.contains('is-open')) closeDropdowns();
+    else openDropdown(dropdown, false);
+    return;
+  }
+  if (!event.target.closest('[data-dropdown]')) closeDropdowns();
+  if (!event.target.closest('[data-date-picker]')) closeDatePickers();
+  if (!event.target.closest('[data-period-picker]')) closePeriodPickers();
+  const descriptionChoice = event.target.closest('[data-description-choice]');
+  if (descriptionChoice) {
+    const input = document.getElementById('title');
+    input.value = descriptionChoice.dataset.descriptionChoice;
+    hideDescriptionSuggestions();
+    input.focus();
+    return;
+  }
+  if (!event.target.closest('.description-autocomplete')) hideDescriptionSuggestions();
+  const iconChoice = event.target.closest('[data-icon-choice]');
+  if (iconChoice) {
+    const picker = iconChoice.closest('.category-icon-picker');
+    picker.querySelector('[name="icon"]').value = iconChoice.dataset.iconChoice;
+    picker.querySelectorAll('[data-icon-choice]').forEach(function (choice) {
+      choice.classList.toggle('selected', choice === iconChoice);
+      choice.setAttribute('aria-checked', String(choice === iconChoice));
+    });
+    return;
+  }
+  const customToneToggle = event.target.closest('[data-custom-tone-toggle]');
+  if (customToneToggle) {
+    document.getElementById('custom-tone-radio').checked = true;
+    document.querySelector('[data-custom-tone-panel]').hidden = false;
+    customToneToggle.classList.add('selected');
+    customToneToggle.setAttribute('aria-expanded', 'true');
+    return;
+  }
+  const routeButton = event.target.closest('[data-route]');
+  if (routeButton) { navigate(routeButton.dataset.route); return; }
+  const categoryDetail = event.target.closest('[data-category-detail]');
+  if (categoryDetail) {
+    const category = categoryById(categoryDetail.dataset.categoryDetail);
+    if (!category) return;
+    if (category.id === 'savings' || category.id === 'savings-return') { navigate('savings'); return; }
+    selectedCategoryId = category.id;
+    categoryKind = category.kind;
+    conceptFilter = null;
+    navigate('category-detail');
+    return;
+  }
+  const conceptButton = event.target.closest('[data-concept-filter]');
+  if (conceptButton) { conceptFilter = conceptButton.dataset.conceptFilter || null; render(); return; }
+  const categoryAdd = event.target.closest('[data-add-category-transaction]');
+  if (categoryAdd) {
+    const category = categoryById(categoryAdd.dataset.addCategoryTransaction);
+    if (category) openTransaction(category.kind, null, category.id);
+    return;
+  }
+  const filterButton = event.target.closest('[data-filter]');
+  if (filterButton) { filter = filterButton.dataset.filter; render(); return; }
+  const categoryKindButton = event.target.closest('[data-category-kind]');
+  if (categoryKindButton) { categoryKind = categoryKindButton.dataset.categoryKind; render(); return; }
+  const editTransaction = event.target.closest('[data-edit-transaction]');
+  if (editTransaction) {
+    const item = data.transactions.find(function (entry) { return entry.id === editTransaction.dataset.editTransaction; });
+    if (item && isSavingsEntry(item)) openSavings(null, item.id);
+    else openTransaction(null, editTransaction.dataset.editTransaction);
+    return;
+  }
+  const editSavings = event.target.closest('[data-edit-savings]');
+  if (editSavings) { openSavings(null, editSavings.dataset.editSavings); return; }
+  const editCategory = event.target.closest('[data-edit-category]');
+  if (editCategory) { modal = { type: 'category', id: editCategory.dataset.editCategory }; render(); return; }
+  const move = event.target.closest('[data-category-move]');
+  if (move) { moveCategory(move.dataset.categoryMove, Number(move.dataset.direction)); return; }
+  const setTheme = event.target.closest('[data-theme-option]');
+  if (setTheme) { data.theme = setTheme.dataset.themeOption; saveData(); render(); return; }
+  const network = event.target.closest('[data-pair-address]');
+  if (network && LIVE && DESKTOP) { selectedNetwork = network.dataset.pairAddress; pairingInfo = null; render(); startPairing(selectedNetwork); return; }
+  const decision = event.target.closest('[data-pair-decision]');
+  if (decision && LIVE && DESKTOP) {
+    apiPost('/api/pair/decision', { id: decision.dataset.requestId, approve: decision.dataset.pairDecision === 'approve' })
+      .then(function () { return refreshDesktopInfo(false); })
+      .then(function () { toast(decision.dataset.pairDecision === 'approve' ? 'Celular vinculado' : 'Solicitud rechazada'); })
+      .catch(function (error) { toast(error.message); });
+    return;
+  }
+  const revoke = event.target.closest('[data-revoke-device]');
+  if (revoke && LIVE && DESKTOP) { modal = { type: 'confirmation', action: 'revoke-device', id: revoke.dataset.revokeDevice }; render(); return; }
+  const modalKind = event.target.closest('[data-modal-kind]');
+  if (modalKind && modal && modal.type === 'transaction') {
+    const currentAmount = document.getElementById('amount').value;
+    const currentTitle = document.getElementById('title').value;
+    const currentNote = document.getElementById('transaction-note').value;
+    const currentDate = document.querySelector('[name="date"]').value;
+    modal.kind = modalKind.dataset.modalKind;
+    render();
+    document.getElementById('amount').value = currentAmount;
+    document.getElementById('title').value = currentTitle;
+    document.getElementById('transaction-note').value = currentNote;
+    document.querySelector('[name="date"]').value = currentDate;
+    document.querySelector('[data-date-label]').textContent = numericDate(currentDate);
+    document.querySelector('[data-date-picker]').dataset.calendarMonth = currentDate.slice(0, 7);
+    document.querySelector('.date-popover').innerHTML = calendarMarkup(currentDate.slice(0, 7), currentDate);
+    return;
+  }
+  const action = event.target.closest('[data-action]');
+  if (!action) return;
+  switch (action.dataset.action) {
+    case 'toggle-theme':
+      data.theme = data.theme === 'light' ? 'dark' : 'light'; saveData(); render(); break;
+    case 'add-transaction': openTransaction(route === 'transactions' && filter === 'income' ? 'income' : 'expense'); break;
+    case 'add-savings': openSavings('deposit'); break;
+    case 'withdraw-savings': if (Object.values(savingsBalances()).some(function (amount) { return amount > 0; })) openSavings('withdrawal'); break;
+    case 'move-savings-category': if (modal && modal.id) openTransaction(null, modal.id); break;
+    case 'add-category': modal = { type: 'category', id: null }; render(); break;
+    case 'merge-concepts': modal = { type: 'merge-concepts', categoryId: selectedCategoryId }; render(); break;
+    case 'show-qr':
+      modal = { type: 'qr' }; pairingInfo = null; pairingStep = 'start'; render();
+      if (LIVE && DESKTOP) refreshDesktopInfo(false).then(function () { startPairing(selectedNetwork); });
+      break;
+    case 'edit-opening-balance': modal = { type: 'balance' }; render(); break;
+    case 'export-data': if (LIVE && DESKTOP) { window.location.href = '/api/export'; toast('Descargando tu copia de seguridad'); } break;
+    case 'restore-data': if (LIVE && DESKTOP) document.getElementById('restore-file')?.click(); break;
+    case 'reload-app': window.location.reload(); break;
+    case 'open-pair': pairingStep = data.linked ? 'done' : 'start'; navigate('pair'); break;
+    case 'close-modal': modal = null; render(); break;
+    case 'cancel-confirm': modal = modal && modal.returnTo ? modal.returnTo : null; render(); break;
+    case 'simulate-request': pairingStep = 'desktop-pending'; render(); break;
+    case 'approve-pair': data.linked = true; pairingStep = 'done'; modal = null; saveData(); render(); toast('iPhone vinculado en la demostración'); break;
+    case 'deny-pair': pairingStep = 'start'; modal = null; render(); toast('Solicitud rechazada'); break;
+    case 'simulate-approval': data.linked = true; pairingStep = 'done'; saveData(); render(); break;
+    case 'reset-demo': modal = { type: 'confirmation', action: 'reset', returnTo: null }; render(); break;
+    case 'delete-transaction': {
+      const item = modal && data.transactions.find(function (entry) { return entry.id === modal.id; });
+      if (item) { modal = { type: 'confirmation', action: 'delete-transaction', id: item.id, returnTo: modal }; render(); }
+      break;
+    }
+    case 'delete-category': {
+      const category = modal && categoryById(modal.id);
+      if (!category) break;
+      if (data.transactions.some(function (item) { return item.categoryId === category.id; })) {
+        toast('Primero reasigná sus movimientos a otra categoría');
+      } else { modal = { type: 'confirmation', action: 'delete-category', id: category.id, returnTo: modal }; render(); }
+      break;
+    }
+    case 'confirm-action': {
+      if (!modal || modal.type !== 'confirmation') break;
+      if (modal.action === 'restore' && LIVE && restoreCandidate) {
+        const candidate = restoreCandidate;
+        modal = null; restoreCandidate = null; render();
+        saveQueue.then(function () { return apiPost('/api/restore', candidate); }).then(function (result) { stateRevision = result.revision; data = result.data; render(); toast('Copia restaurada'); }).catch(function (error) { toast(error.message); });
+      } else if (modal.action === 'revoke-device' && LIVE && DESKTOP) {
+        const id = modal.id;
+        modal = null; render();
+        apiPost('/api/devices/revoke', { id }).then(function () { return refreshDesktopInfo(false); }).then(function () { toast('Acceso revocado'); }).catch(function (error) { toast(error.message); });
+      } else if (modal.action === 'reset') {
+        data = freshData(); selectedMonth = SAMPLE_MONTH; annualYear = 2026; filter = 'all'; query = ''; categoryKind = 'expense'; route = 'home';
+        modal = null; saveData(); render(); toast('Datos de ejemplo restaurados');
+      } else if (modal.action === 'delete-transaction') {
+        const remaining = data.transactions.filter(function (entry) { return entry.id !== modal.id; });
+        if (!savingsBalancesValid(remaining)) {
+          modal = modal.returnTo; render(); toast('No podés eliminar este aporte mientras haya retiros que dependan de él'); break;
+        }
+        data.transactions = data.transactions.filter(function (entry) { return entry.id !== modal.id; });
+        modal = null; saveData(); render(); toast('Movimiento eliminado');
+      } else if (modal.action === 'delete-category') {
+        data.categories = data.categories.filter(function (entry) { return entry.id !== modal.id; });
+        modal = null; saveData(); render(); toast('Categoría eliminada');
+      }
+      break;
+    }
+  }
+});
+
+document.addEventListener('input', function (event) {
+  if (event.target.id === 'title' && modal && modal.type === 'transaction') { updateDescriptionSuggestions(); return; }
+  if (event.target.id === 'icon-search') {
+    const needle = event.target.value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+    const picker = event.target.closest('.category-icon-picker');
+    let visible = 0;
+    picker.querySelectorAll('[data-icon-choice]').forEach(function (choice) {
+      const words = choice.dataset.iconSearch.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+      choice.hidden = !words.includes(needle);
+      if (!choice.hidden) visible++;
+    });
+    picker.querySelector('.icon-empty').hidden = visible > 0;
+    return;
+  }
+  if (event.target.id === 'category-color' || event.target.id === 'category-color-hex') {
+    const value = event.target.value.trim();
+    const normalized = '#' + value.replace(/^#/, '').toUpperCase();
+    if (isCustomTone(normalized)) {
+      document.getElementById('custom-tone-radio').checked = true;
+      document.querySelector('[data-custom-tone-panel]').hidden = false;
+      const toggle = document.querySelector('[data-custom-tone-toggle]');
+      toggle.classList.add('selected');
+      toggle.setAttribute('aria-expanded', 'true');
+      toggle.querySelector('.custom-tone-dot').style.background = normalized;
+      document.querySelector('.custom-color-swatch').style.background = normalized;
+      document.getElementById('category-color').value = normalized;
+      if (event.target.id === 'category-color') document.getElementById('category-color-hex').value = normalized;
+    }
+    return;
+  }
+  if (event.target.id !== 'transaction-search') return;
+  query = event.target.value;
+  const position = event.target.selectionStart;
+  render();
+  const replacement = document.getElementById('transaction-search');
+  if (replacement) { replacement.focus(); replacement.setSelectionRange(position, position); }
+});
+
+document.addEventListener('change', async function (event) {
+  if (event.target.matches('#category-form input[name="tone"]') && event.target.value !== 'custom') {
+    document.querySelector('[data-custom-tone-panel]').hidden = true;
+    const toggle = document.querySelector('[data-custom-tone-toggle]');
+    toggle.classList.remove('selected');
+    toggle.setAttribute('aria-expanded', 'false');
+    return;
+  }
+  if (event.target.id !== 'restore-file' || !LIVE || !DESKTOP) return;
+  const file = event.target.files && event.target.files[0];
+  if (!file) return;
+  try {
+    if (file.size > 2000000) throw new Error('La copia es demasiado grande');
+    const content = JSON.parse(await file.text());
+    if (content.format !== 'MisGastos' || content.version !== 1 || !content.state) throw new Error('No es una copia de MisGastos');
+    restoreCandidate = content;
+    modal = { type: 'confirmation', action: 'restore' };
+    render();
+  } catch (error) { toast(error.message); }
+});
+
+document.addEventListener('submit', function (event) {
+  if (event.target.id === 'merge-concepts-form') {
+    event.preventDefault();
+    const form = new FormData(event.target);
+    const source = String(form.get('source') || '');
+    const target = String(form.get('target') || '');
+    const groups = conceptGroups(modal.categoryId);
+    const destination = groups.find(function (group) { return group.key === target; });
+    if (!source || source === target || !groups.some(function (group) { return group.key === source; }) || !destination) {
+      toast('Elegí dos nombres distintos'); return;
+    }
+    data.transactions.forEach(function (item) {
+      if (item.categoryId === modal.categoryId && conceptKey(item.title) === source) item.title = destination.title;
+    });
+    if (conceptFilter === source) conceptFilter = target;
+    modal = null; saveData(); render(); toast('Nombres unidos');
+  } else if (event.target.id === 'balance-form') {
+    event.preventDefault();
+    const balance = Number(new FormData(event.target).get('balance'));
+    if (!Number.isSafeInteger(balance) || Math.abs(balance) > 1e12) { toast('Ingresá un saldo válido en pesos'); return; }
+    data.openingBalance = balance;
+    modal = null; saveData(); render(); toast('Saldo inicial guardado');
+  } else if (event.target.id === 'transaction-form') {
+    event.preventDefault();
+    const form = new FormData(event.target);
+    const amount = Number(form.get('amount'));
+    const title = String(form.get('title') || '').trim();
+    const note = String(form.get('note') || '').trim();
+    const date = String(form.get('date') || '');
+    const categoryId = String(form.get('category') || '');
+    if (!Number.isSafeInteger(amount) || amount <= 0 || !title || title.length > 80 || note.length > 160 || !/^\d{4}-\d{2}-\d{2}$/.test(date) || categoryById(categoryId)?.kind !== modal.kind) {
+      toast('Revisá el monto, la descripción y la categoría'); return;
+    }
+    const previous = modal.id ? data.transactions.find(function (item) { return item.id === modal.id; }) : null;
+    const entry = { id: modal.id || 't' + Date.now(), kind: modal.kind, amount: amount, title: title, date: date, categoryId: categoryId };
+    if (note) entry.note = note;
+    if (isSavingsEntry(entry)) {
+      entry.savingsCurrency = previous && isSavingsEntry(previous) ? savingsCurrency(previous) : 'ARS';
+      entry.savingsAmount = previous && isSavingsEntry(previous) ? savingsUnits(previous) : amount;
+    }
+    const remaining = data.transactions.filter(function (item) { return item.id !== entry.id; });
+    if (!savingsBalancesValid(remaining.concat(entry))) {
+      toast('El retiro no puede superar lo que tenés ahorrado'); return;
+    }
+    if (modal.id) data.transactions = data.transactions.map(function (item) { return item.id === modal.id ? entry : item; });
+    else data.transactions.push(entry);
+    selectedMonth = date.slice(0, 7);
+    modal = null; saveData(); render(); toast('Movimiento guardado');
+  } else if (event.target.id === 'savings-form') {
+    event.preventDefault();
+    const form = new FormData(event.target);
+    const currency = String(form.get('currency') || 'ARS');
+    const units = Number(form.get('units'));
+    const amount = currency === 'ARS' ? units : Number(form.get('arsAmount'));
+    const title = String(form.get('title') || '').trim();
+    const date = String(form.get('date') || '');
+    const previous = modal.id ? data.transactions.find(function (entry) { return entry.id === modal.id; }) : null;
+    const deposit = modal.action === 'deposit';
+    const allowedCurrency = SAVINGS_CURRENCIES.some(function (entry) { return entry.code === currency; }) || currency === 'EUR' && (previous && savingsCurrency(previous) === 'EUR' || !deposit && savingsBalances().EUR > 0);
+    if (!allowedCurrency || !Number.isFinite(units) || units <= 0 || !Number.isSafeInteger(Math.round(units * 100)) || Math.abs(units * 100 - Math.round(units * 100)) > 0.00001 || !Number.isSafeInteger(amount) || amount <= 0 || !title || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      toast('Revisá la moneda, los montos y la descripción'); return;
+    }
+    const entry = { id: modal.id || 't' + Date.now(), kind: deposit ? 'expense' : 'income', amount: amount, title: title, date: date, categoryId: deposit ? 'savings' : 'savings-return', savingsCurrency: currency, savingsAmount: units };
+    if (previous && previous.note) entry.note = previous.note;
+    const remaining = data.transactions.filter(function (item) { return item.id !== entry.id; });
+    if (!savingsBalancesValid(remaining.concat(entry))) {
+      toast('El retiro no puede superar el ahorro en esa moneda'); return;
+    }
+    if (modal.id) data.transactions = data.transactions.map(function (item) { return item.id === modal.id ? entry : item; });
+    else data.transactions.push(entry);
+    selectedMonth = date.slice(0, 7);
+    modal = null; saveData(); render(); toast(deposit ? 'Aporte guardado' : 'Retiro guardado');
+  } else if (event.target.id === 'category-form') {
+    event.preventDefault();
+    const form = new FormData(event.target);
+    const name = String(form.get('name') || '').trim();
+    if (!name) { toast('Escribí un nombre para la categoría'); return; }
+    const selectedIcon = String(form.get('icon'));
+    const selectedTone = String(form.get('tone'));
+    const customColor = '#' + String(form.get('customTone') || '').trim().replace(/^#/, '').toUpperCase();
+    const tone = selectedTone === 'custom' ? customColor : selectedTone;
+    if (!CATEGORY_ICON_CATALOG[selectedIcon] || !(PRESET_TONES.includes(tone) || isCustomTone(tone))) {
+      toast('Elegí un ícono y un color válido'); return;
+    }
+    const entry = { id: modal.id || 'c' + Date.now(), kind: modal.id ? categoryById(modal.id).kind : categoryKind, name: name, icon: selectedIcon, tone: tone };
+    if (modal.id) data.categories = data.categories.map(function (category) { return category.id === modal.id ? entry : category; });
+    else data.categories.push(entry);
+    modal = null; saveData(); render(); toast('Categoría guardada');
+  } else if (event.target.id === 'pair-form') {
+    event.preventDefault();
+    const code = String(new FormData(event.target).get('code') || '').replace(/\s/g, '').toUpperCase();
+    if (code !== QR_CODE) { toast('Usá el código de muestra A7F3K9M2'); return; }
+    pairingStep = 'pending';
+    render();
+  }
+});
+
+document.addEventListener('keydown', function (event) {
+  if (event.target.id === 'title') {
+    const list = document.getElementById('description-suggestions');
+    if (list && !list.hidden) {
+      const options = Array.from(list.querySelectorAll('[data-description-choice]'));
+      const current = options.findIndex(function (option) { return option.id === event.target.getAttribute('aria-activedescendant'); });
+      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+        event.preventDefault();
+        const next = event.key === 'ArrowDown' ? (current + 1) % options.length : (current - 1 + options.length) % options.length;
+        options.forEach(function (option, index) { option.classList.toggle('is-active', index === next); });
+        event.target.setAttribute('aria-activedescendant', options[next].id);
+        return;
+      }
+      if (event.key === 'Enter' && current >= 0) {
+        event.preventDefault();
+        event.target.value = options[current].dataset.descriptionChoice;
+        hideDescriptionSuggestions();
+        return;
+      }
+      if (event.key === 'Escape') { event.preventDefault(); hideDescriptionSuggestions(); return; }
+    }
+  }
+  const dropdown = event.target.closest('[data-dropdown]');
+  if (dropdown && (event.key === 'ArrowDown' || event.key === 'ArrowUp' || event.key === 'Home' || event.key === 'End')) {
+    event.preventDefault();
+    if (!dropdown.classList.contains('is-open')) { openDropdown(dropdown, true); return; }
+    const options = Array.from(dropdown.querySelectorAll('[data-dropdown-option]'));
+    if (!options.length) return;
+    const current = options.indexOf(document.activeElement);
+    const next = event.key === 'Home' ? 0 : event.key === 'End' ? options.length - 1 : event.key === 'ArrowDown' ? (current + 1) % options.length : (current - 1 + options.length) % options.length;
+    options[next].focus();
+    return;
+  }
+  if (event.key === 'Escape' && dropdown && dropdown.classList.contains('is-open')) {
+    event.preventDefault();
+    closeDropdowns();
+    dropdown.querySelector('[data-dropdown-trigger]').focus();
+    return;
+  }
+  const datePickerElement = event.target.closest('[data-date-picker]');
+  if (event.key === 'Escape' && datePickerElement && datePickerElement.classList.contains('is-open')) {
+    event.preventDefault();
+    closeDatePickers();
+    datePickerElement.querySelector('[data-date-trigger]').focus();
+    return;
+  }
+  const periodPickerElement = event.target.closest('[data-period-picker]');
+  if (event.key === 'Escape' && periodPickerElement && periodPickerElement.classList.contains('is-open')) {
+    event.preventDefault();
+    closePeriodPickers();
+    periodPickerElement.querySelector('[data-period-trigger]').focus();
+    return;
+  }
+  if (event.key === 'Escape' && modal) { modal = modal.type === 'confirmation' && modal.returnTo ? modal.returnTo : null; render(); }
+});
+
+document.addEventListener('focusin', function (event) {
+  document.querySelectorAll('.custom-select.is-open').forEach(function (dropdown) {
+    if (!dropdown.contains(event.target)) closeDropdowns();
+  });
+  document.querySelectorAll('.date-picker.is-open').forEach(function (picker) {
+    if (!picker.contains(event.target)) closeDatePickers();
+  });
+  document.querySelectorAll('.period-picker.is-open').forEach(function (picker) {
+    if (!picker.contains(event.target)) closePeriodPickers();
+  });
+});
+
+let draggedCategory = null;
+document.addEventListener('dragstart', function (event) {
+  const row = event.target.closest('[data-category-row]');
+  if (!row) return;
+  draggedCategory = row.dataset.categoryRow;
+  event.dataTransfer.effectAllowed = 'move';
+  row.classList.add('dragging');
+});
+document.addEventListener('dragover', function (event) {
+  const row = event.target.closest('[data-category-row]');
+  if (row && draggedCategory) event.preventDefault();
+});
+document.addEventListener('drop', function (event) {
+  const row = event.target.closest('[data-category-row]');
+  if (!row || !draggedCategory) return;
+  event.preventDefault();
+  const from = data.categories.findIndex(function (category) { return category.id === draggedCategory; });
+  const to = data.categories.findIndex(function (category) { return category.id === row.dataset.categoryRow; });
+  if (from >= 0 && to >= 0 && from !== to && data.categories[from].kind === data.categories[to].kind) {
+    const moved = data.categories.splice(from, 1)[0];
+    data.categories.splice(to, 0, moved);
+    saveData();
+    render();
+  }
+  draggedCategory = null;
+});
+document.addEventListener('dragend', function () {
+  draggedCategory = null;
+  document.querySelectorAll('.dragging').forEach(function (row) { row.classList.remove('dragging'); });
+});
+
+window.addEventListener('storage', function (event) {
+  if (LIVE) return;
+  if (event.key === STORAGE_KEY) { data = loadData(); render(); }
+});
+
+async function apiPost(url, payload) {
+  const response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+  const result = await response.json();
+  if (!response.ok) throw new Error(result.error || 'No se pudo completar la acción');
+  return result;
+}
+
+async function refreshDesktopInfo(openApproval) {
+  if (!LIVE || !DESKTOP) return;
+  try {
+    const response = await fetch('/api/desktop-info', { cache: 'no-store' });
+    if (!response.ok) return;
+    const next = await response.json();
+    const changed = JSON.stringify(next) !== JSON.stringify(desktopInfo);
+    desktopInfo = next;
+    if (!selectedNetwork && next.networks.length) selectedNetwork = next.networks[0].address;
+    if (openApproval && next.pending.length && !modal) modal = { type: 'qr' };
+    if (changed && (route === 'settings' || modal?.type === 'qr' || openApproval)) render();
+  } catch (error) { console.warn('No se pudo actualizar la vinculación', error); }
+}
+
+async function startPairing(address) {
+  if (!LIVE || !DESKTOP) return;
+  try {
+    const result = await apiPost('/api/pair/start', { address: address || selectedNetwork });
+    selectedNetwork = result.address;
+    pairingInfo = result;
+    render();
+  } catch (error) { toast(error.message); }
+}
+
+async function refreshLiveState() {
+  if (!LIVE || savesPending) return;
+  try {
+    const response = await fetch('/api/state', { cache: 'no-store' });
+    if (response.status === 401) { window.location.replace('/'); return; }
+    if (!response.ok) return;
+    const next = await response.json();
+    if (modal) return;
+    if (next.revision > stateRevision) { stateRevision = next.revision; data = next.data; render(); toast('Datos actualizados desde otro dispositivo'); }
+  } catch (error) { console.warn('Sin conexión con la PC', error); }
+}
+
+async function initializeLive() {
+  document.getElementById('app').innerHTML = '<div class="startup-status">Abriendo MisGastos...</div>';
+  try {
+    const response = await fetch('/api/state', { cache: 'no-store' });
+    if (!response.ok) throw new Error('No se pudo conectar con la PC');
+    const saved = await response.json();
+    stateRevision = saved.revision;
+    data = saved.data;
+    render();
+    if (DESKTOP) await refreshDesktopInfo(false);
+    setInterval(refreshLiveState, 10000);
+    if (DESKTOP) setInterval(function () { refreshDesktopInfo(false); }, 2500);
+  } catch (error) {
+    document.getElementById('app').innerHTML = '<div class="startup-status"><strong>No se pudo abrir MisGastos</strong><p>' + escapeHtml(error.message) + '</p><button class="button button-primary" data-action="reload-app" type="button">Reintentar</button></div>';
+  }
+}
+
+window.MISGASTOS_OPEN_QR = function () { if (!LIVE || !DESKTOP) return; modal = { type: 'qr' }; pairingInfo = null; render(); refreshDesktopInfo(false).then(function () { startPairing(selectedNetwork); }); };
+window.MISGASTOS_PENDING = function () { refreshDesktopInfo(true); };
+if (LIVE) initializeLive(); else render();
