@@ -5,6 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { openStore } = require('../desktop/store.cjs');
 const { extractBatch } = require('../desktop/discord-ai.cjs');
+const { isNewMovementMessage, isCorrectionMessage } = require('../desktop/discord-bot.cjs');
 const { createDiscordConfig } = require('../desktop/discord-config.cjs');
 
 const initialStatePath = path.join(__dirname, '..', 'initial-state.json');
@@ -32,12 +33,41 @@ test('Discord batch stores only confirmed included movements and learns merchant
     assert.deepEqual(store.merchantRules(), [{ merchant: 'Starbucks', categoryId: 'food' }]);
     store.markDiscordMessageSeen(id);
     assert.equal(store.hasSeenDiscordMessage(id), true);
+    store.saveBatch({ id: '1555788208703414337', channelId: '1555788208703414335', authorId: '1555788208703414334', rows: [] });
+    assert.equal(store.latestUsefulBatch('1555788208703414335', '1555788208703414334').id, id);
   } finally {
     store.close();
     const resolved = path.resolve(folder);
     assert.ok(resolved.startsWith(path.resolve(os.tmpdir()) + path.sep));
     fs.rmSync(resolved, { recursive: true, force: true });
   }
+});
+
+test('An empty proposal cannot trap new expenses as corrections', () => {
+  const empty = { rows: [] };
+  const active = { rows: [{ title: 'Starbucks' }] };
+  assert.equal(isCorrectionMessage('Cuotas Mercado Pago - $53.349 - Credito', empty), false);
+  assert.equal(isNewMovementMessage('Cuotas Mercado Pago - $53.349 - Credito'), true);
+  assert.equal(isNewMovementMessage('Nuevo gasto:\nCuotas Mercado Pago - $53.349 - Credito'), true);
+  assert.equal(isNewMovementMessage('Tambien crea el de Cuotas Mercado Pago de la captura anterior'), true);
+  assert.equal(isCorrectionMessage('el 3 va en Comida', active), true);
+  assert.equal(isNewMovementMessage('Fila 4'), false);
+  assert.equal(isCorrectionMessage('a q te referis?', empty), false);
+});
+
+test('A card installment is excluded from screenshots but accepted as an explicit manual expense', async () => {
+  const referenceRows = [{ title: 'Cuotas Mercado Pago', kind: 'expense', amount: 53349, currency: 'ARS', date: '2026-10-01', time: '12:41', categoryId: 'credit' }];
+  const runStructured = async (_schema, prompt) => {
+    assert.match(prompt, /Cuotas Mercado Pago/);
+    return { rows: [{ ...referenceRows[0], include: false, reason: 'Cuotas que se pagarán como un único gasto' }] };
+  };
+  const common = { caption: 'Tambien crea el de Cuotas Mercado Pago en Credito', categories: [{ id: 'credit', name: 'Credito', kind: 'expense' }], rules: [], existing: [], today: '2026-10-03', referenceRows, runStructured };
+  const manual = await extractBatch({ ...common, images: [] });
+  assert.equal(manual[0].include, true);
+  assert.equal(manual[0].date, '2026-10-01');
+  assert.equal(manual[0].amount, 53349);
+  const screenshot = await extractBatch({ ...common, images: [{ mime: 'image/png', bytes: Buffer.from('image') }] });
+  assert.equal(screenshot[0].include, false);
 });
 
 test('Vision proposal rounds ARS, applies learned rules and pauses USD or uncertain income', async () => {

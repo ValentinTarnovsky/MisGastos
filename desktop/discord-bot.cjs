@@ -9,6 +9,14 @@ function todayInArgentina() {
   return part('year') + '-' + part('month') + '-' + part('day');
 }
 
+function isNewMovementMessage(input) {
+  if (/^(?:ignora|ignor[aá]|omit[ií]|inclu[ií]|fila\s*\d+|(?:el|la)\s+\d+\s+(?:va|es|pon|cambi))/i.test(input)) return false;
+  if (/\b(?:pon[eé]|cambi[aá]|correg[ií]|va en)\b/i.test(input)) return false;
+  return /(?:\$|\bARS\b|\bUSD\b)\s*\d|\b\d{2,}(?:[.,]\d+)*\b/i.test(input) || /^(?:nuevo\s+(?:gasto|ingreso|movimiento)|(?:tambi[eé]n\s+)?(?:cre[aá]|agreg[aá]|registr[aá]|carg[aá])\b)/i.test(input);
+}
+
+function isCorrectionMessage(input, pending) { return Boolean(pending?.rows.length) && !isNewMovementMessage(input); }
+
 function preview(batch, categories) {
   const names = new Map(categories.map((item) => [item.id, item.name]));
   const lines = batch.rows.map((row, index) => {
@@ -57,11 +65,17 @@ function createDiscordBot(store, config) {
     if (message.author.id !== guild.ownerId) return;
     const attachments = [...message.attachments.values()].filter((item) => /^image\/(png|jpeg|webp)$/.test(item.contentType || '') || /\.(png|jpe?g|webp)$/i.test(item.name || '')).slice(0, 4);
     const input = message.content.trim();
-    const pending = store.latestPendingBatch(message.channelId, message.author.id);
+    let pending = store.latestPendingBatch(message.channelId, message.author.id);
 
     try {
+      if (pending && !pending.rows.length) {
+        store.updateBatch(pending.id, pending.rows, 'cancelled');
+        pending = null;
+      }
       if (!pending && !attachments.length && /^(guardar|confirmar|listo|sí|si|cancelar|descartar|olvidar)$/i.test(input)) {
         await message.reply({ content: 'No hay una propuesta pendiente. Mandá una captura o un gasto primero.', allowedMentions: { parse: [] } });
+      } else if (!attachments.length && /^(?:ayuda|a\s+q(?:u[eé])?\s+te\s+refer[ií]s|qu[eé]\s+quer[eé]s\s+decir)\??$/i.test(input)) {
+        await message.reply({ content: 'Primero te muestro una propuesta; no guardo nada hasta que escribas **guardar**. Podés mandar una captura o un gasto como `Cuotas Mercado Pago $53.349 en Credito`. Para cambiar una fila de la propuesta, decime su número. Escribí **cancelar** para descartarla.', allowedMentions: { parse: [] } });
       } else if (!pending && !attachments.length && /^(record[aá]|aprend[eé]|acordate)/i.test(input)) {
         const categories = store.getState().data.categories;
         const correction = await interpretCorrection({ message: input, batch: { rows: [] }, categories });
@@ -76,7 +90,7 @@ function createDiscordBot(store, config) {
       } else if (pending && !attachments.length && /^(cancelar|descartar|olvidar)$/i.test(input)) {
         store.updateBatch(pending.id, pending.rows, 'cancelled');
         await message.reply({ content: 'Descarté la propuesta. No cargué movimientos.', allowedMentions: { parse: [] } });
-      } else if (pending && !attachments.length && !/^\s*(?:nuevo\s+)?(?:\$\s*)?\d[\d.,]*\s+/.test(input)) {
+      } else if (!attachments.length && isCorrectionMessage(input, pending)) {
         const categories = store.getState().data.categories;
         const correction = await interpretCorrection({ message: input, batch: pending, categories });
         const index = correction.index - 1;
@@ -115,13 +129,21 @@ function createDiscordBot(store, config) {
             await message.reply({ content: `Aprendí que ${merchant} va en ${category.name}.`, allowedMentions: { parse: [] } });
           }
         }
-      } else if (attachments.length || input) {
+      } else if (attachments.length || isNewMovementMessage(input)) {
         const images = await Promise.all(attachments.map(downloadImage));
         const state = store.getState().data;
-        const rows = await extractBatch({ images, caption: input, categories: state.categories, rules: store.merchantRules(), existing: state.transactions, today: todayInArgentina() });
-        if (pending) store.updateBatch(pending.id, pending.rows, 'cancelled');
-        const batch = store.saveBatch({ id: message.id, channelId: message.channelId, authorId: message.author.id, rows });
-        await message.reply({ content: preview(batch, state.categories), allowedMentions: { parse: [] } });
+        const referenceRows = !images.length && /\b(?:el de|la fila|el\s+\d+|era el|ya est[aá] guardado|captura anterior)\b/i.test(input)
+          ? store.latestUsefulBatch(message.channelId, message.author.id)?.rows || [] : [];
+        const rows = await extractBatch({ images, caption: input, categories: state.categories, rules: store.merchantRules(), existing: state.transactions, today: todayInArgentina(), referenceRows });
+        if (!rows.length) {
+          await message.reply({ content: 'No encontré un movimiento concreto para proponer. Si hablás de una captura anterior, decime el comercio y el importe, por ejemplo: `Cuotas Mercado Pago $53.349 en Credito`. No guardé nada.', allowedMentions: { parse: [] } });
+        } else {
+          if (pending) store.updateBatch(pending.id, pending.rows, 'cancelled');
+          const batch = store.saveBatch({ id: message.id, channelId: message.channelId, authorId: message.author.id, rows });
+          await message.reply({ content: preview(batch, state.categories), allowedMentions: { parse: [] } });
+        }
+      } else if (input) {
+        await message.reply({ content: 'No hay una propuesta para corregir. Mandá una captura o escribí un gasto con importe, por ejemplo: `Cuotas Mercado Pago $53.349 en Credito`. No guardé nada.', allowedMentions: { parse: [] } });
       } else return;
       store.markDiscordMessageSeen(message.id);
     } catch (error) {
@@ -166,4 +188,4 @@ function createDiscordBot(store, config) {
   return { start, stop, info };
 }
 
-module.exports = { createDiscordBot, preview, downloadImage };
+module.exports = { createDiscordBot, preview, downloadImage, isNewMovementMessage, isCorrectionMessage };

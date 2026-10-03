@@ -207,6 +207,14 @@ async function openStore(userDataPath, initialStatePath) {
     return id ? batch(id) : null;
   }
 
+  function latestUsefulBatch(channelId, authorId) {
+    const stmt = db.prepare("SELECT id FROM discord_batches WHERE channel_id = ? AND author_id = ? AND status IN ('pending', 'committed') AND payload != '[]' ORDER BY created_at DESC LIMIT 1");
+    stmt.bind([channelId, authorId]);
+    const id = stmt.step() ? stmt.getAsObject().id : null;
+    stmt.free();
+    return id ? batch(id) : null;
+  }
+
   function saveBatch(input) {
     if (!/^\d{17,22}$/.test(input.id) || !/^\d{17,22}$/.test(input.channelId) || !/^\d{17,22}$/.test(input.authorId) || !Array.isArray(input.rows) || input.rows.length > 30) throw new Error('Lote inválido');
     if (batch(input.id)) return batch(input.id);
@@ -255,7 +263,7 @@ async function openStore(userDataPath, initialStatePath) {
     persist();
   }
 
-  return { getState, saveState, restoreState, addDevice, deviceForToken, listDevices, revokeDevice, merchantRules, setMerchantRule, replaceMerchantRules, batch, latestPendingBatch, saveBatch, updateBatch, commitBatch, hasSeenDiscordMessage, markDiscordMessageSeen, backupDir, dbPath, backupNow, close: () => db.close() };
+  return { getState, saveState, restoreState, addDevice, deviceForToken, listDevices, revokeDevice, merchantRules, setMerchantRule, replaceMerchantRules, batch, latestPendingBatch, latestUsefulBatch, saveBatch, updateBatch, commitBatch, hasSeenDiscordMessage, markDiscordMessageSeen, backupDir, dbPath, backupNow, close: () => db.close() };
 }
 
 module.exports = { openStore, validateState };

@@ -95,7 +95,7 @@ const extractionSchema = {
   properties: { rows: { type: 'array', items: rowSchema } }, required: ['rows']
 };
 
-async function extractBatch({ images, caption, categories, rules, existing, today, runStructured = runCodex }) {
+async function extractBatch({ images, caption, categories, rules, existing, today, referenceRows = [], runStructured = runCodex }) {
   const categoryList = categories.map((item) => ({ id: item.id, name: item.name, kind: item.kind }));
   const instructions = [
     'Extraé movimientos financieros de las imágenes o del mensaje. Respondé solo según el esquema JSON.',
@@ -104,13 +104,16 @@ async function extractBatch({ images, caption, categories, rules, existing, toda
     'Los importes usan formato argentino: 1.197,05 significa 1197.05. Usá fecha visible, no la fecha actual cuando la imagen indique otra.',
     'Elegí solamente categoryId de la lista. Si no hay una opción clara, usá null e include=false.',
     'Si el mensaje pide ignorar un comercio o fila, devolvela con include=false y reason="Ignorado por indicación del usuario".',
-    'Tarjeta de crédito, cuotas que se pagarán como un único gasto, cargos USD y transferencias entre cuentas propias: include=false.',
+    'En capturas, excluí cargos de tarjeta, cuotas que se pagarán como un único gasto, cargos USD y transferencias entre cuentas propias.',
+    'Si el usuario escribe expresamente un pago único de tarjeta o cuotas como gasto nuevo, proponelo en ARS con la categoría de Crédito si existe. No lo excluyas solo por ser de tarjeta.',
+    'Si el usuario se refiere a una fila anterior sin repetir el importe, usá las filas de referencia solo cuando el comercio coincida claramente. Priorizá el nombre sobre un número de fila ambiguo. Conservá importe y fecha originales. Si no podés identificarla, devolvé rows=[].',
     'Un ingreso de origen incierto o una transferencia a una persona sin regla conocida: include=false hasta que el usuario aclare.',
     'No conviertas USD a ARS. Para ARS, conservá el valor con decimales; la app redondeará al peso al guardar.',
     'Máximo 30 filas. Usá nombres cortos y reconocibles como título.',
     'Fecha actual: ' + today,
     'Categorías: ' + JSON.stringify(categoryList),
     'Reglas conocidas: ' + JSON.stringify(rules),
+    'Filas anteriores de referencia: ' + JSON.stringify(referenceRows.map((row) => ({ title: row.title, kind: row.kind, amount: row.amount, currency: row.currency, date: row.date, time: row.time, categoryId: row.categoryId }))),
     'Mensaje del usuario: ' + (caption || '(solo imagen)')
   ].join('\n');
   const output = await runStructured(extractionSchema, instructions, images);
@@ -135,7 +138,8 @@ async function extractBatch({ images, caption, categories, rules, existing, toda
     if (!dateKnown) { include = false; reason = 'Fecha por confirmar'; }
     if (!title || !Number.isSafeInteger(amount) || amount <= 0) { include = false; reason = 'Importe o concepto ilegible'; }
     if (currency !== 'ARS') { include = false; reason = currency === 'USD' ? 'Gasto en USD para cargar con la tarjeta' : 'Moneda incierta'; }
-    if (/tarjeta de cr[eé]dito|cr[eé]ditos? de mercado pago|pago de cuotas/i.test(title + ' ' + reason)) { include = false; reason = 'Tarjeta o cuota para cargar por separado'; }
+    if (images.length && /tarjeta de cr[eé]dito|cr[eé]ditos? de mercado pago|pago de cuotas|cuotas? mercado pago/i.test(title + ' ' + reason)) { include = false; reason = 'Tarjeta o cuota para cargar por separado'; }
+    if (!images.length && item.kind === 'expense' && dateKnown && Number.isSafeInteger(amount) && amount > 0 && currency === 'ARS' && category?.kind === 'expense' && /tarjeta|cuot|cr[eé]dit/i.test(title) && !/(?:ignora|omit[ií])/i.test(caption || '')) { include = true; reason = ''; }
     if (ignoreKey && (keyOf(title).includes(ignoreKey) || ignoreKey.includes(keyOf(title)))) { include = false; reason = 'Ignorado por indicación tuya'; }
     if (!category || category.kind !== item.kind || categoryId === 'savings' || categoryId === 'savings-return') { include = false; reason ||= 'Categoría por confirmar'; }
     const fingerprint = [keyOf(title), item.kind, date, amount, time || ''].join('|');
