@@ -25,11 +25,13 @@ test('Discord batch stores only confirmed included movements and learns merchant
     assert.equal(store.commitBatch(id), 1);
     assert.equal(store.getState().data.transactions.length, 1);
     assert.equal(store.getState().data.transactions[0].amount, 560);
+    assert.match(store.getState().data.transactions[0].createdAt, /^\d{4}-\d{2}-\d{2}T/);
     assert.throws(() => store.commitBatch(id), /ya no está pendiente/);
     const beforeRestore = store.getState();
     assert.throws(() => store.restoreState(beforeRestore.data, [{ merchant: 'Pepito', categoryId: 'missing' }]), /Regla inválida/);
     assert.equal(store.getState().revision, beforeRestore.revision);
     store.restoreState(beforeRestore.data, [{ merchant: 'Starbucks', categoryId: 'food' }]);
+    assert.equal(store.getState().data.transactions[0].createdAt, beforeRestore.data.transactions[0].createdAt);
     assert.deepEqual(store.merchantRules(), [{ merchant: 'Starbucks', categoryId: 'food' }]);
     store.markDiscordMessageSeen(id);
     assert.equal(store.hasSeenDiscordMessage(id), true);

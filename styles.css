@@ -69,7 +69,7 @@
 }
 
 * { box-sizing: border-box; }
-html { background: var(--background); }
+html { background: var(--background); scrollbar-gutter: stable; }
 body {
   margin: 0;
   background: var(--background);

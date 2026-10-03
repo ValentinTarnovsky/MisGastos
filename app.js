@@ -257,9 +257,16 @@ function matchingConcepts(categoryId, query) {
 }
 
 function sortedTransactions() {
-  return data.transactions.slice().sort(function (a, b) {
-    return b.date.localeCompare(a.date) || b.id.localeCompare(a.id);
-  });
+  return data.transactions.map(function (item, index) {
+    const time = /^Hora:\s*([01]\d|2[0-3]):([0-5]\d)(?:\s|$)/.exec(item.note || '');
+    return { item: item, index: index, time: time ? Number(time[1]) * 60 + Number(time[2]) : 1440 + index / 100000 };
+  })
+    .sort(function (a, b) {
+      return b.item.date.localeCompare(a.item.date) ||
+        (b.item.createdAt || '').localeCompare(a.item.createdAt || '') ||
+        b.time - a.time || b.index - a.index;
+    })
+    .map(function (entry) { return entry.item; });
 }
 
 function selectedTransactions() {
@@ -1363,6 +1370,7 @@ document.addEventListener('submit', function (event) {
     }
     const previous = modal.id ? data.transactions.find(function (item) { return item.id === modal.id; }) : null;
     const entry = { id: modal.id || 't' + Date.now(), kind: modal.kind, amount: amount, title: title, date: date, categoryId: categoryId };
+    if (previous?.createdAt || !previous) entry.createdAt = previous?.createdAt || new Date().toISOString();
     if (note) entry.note = note;
     if (isSavingsEntry(entry)) {
       entry.savingsCurrency = previous && isSavingsEntry(previous) ? savingsCurrency(previous) : 'ARS';
@@ -1391,6 +1399,7 @@ document.addEventListener('submit', function (event) {
       toast('Revisá la moneda, los montos y la descripción'); return;
     }
     const entry = { id: modal.id || 't' + Date.now(), kind: deposit ? 'expense' : 'income', amount: amount, title: title, date: date, categoryId: deposit ? 'savings' : 'savings-return', savingsCurrency: currency, savingsAmount: units };
+    if (previous?.createdAt || !previous) entry.createdAt = previous?.createdAt || new Date().toISOString();
     if (previous && previous.note) entry.note = previous.note;
     const remaining = data.transactions.filter(function (item) { return item.id !== entry.id; });
     if (!savingsBalancesValid(remaining.concat(entry))) {

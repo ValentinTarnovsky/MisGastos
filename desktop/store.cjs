@@ -33,6 +33,10 @@ function validateState(state) {
     if (!item || typeof item.id !== 'string' || !/^[a-zA-Z0-9_-]{1,80}$/.test(item.id) || transactionIds.has(item.id) || !['expense', 'income'].includes(item.kind) || !Number.isSafeInteger(item.amount) || item.amount <= 0 || item.amount > 1e12 || typeof item.title !== 'string' || !item.title.trim() || item.title.length > 80 || !validDate(item.date) || categoryMap.get(item.categoryId)?.kind !== item.kind) throw new Error('Movimiento inválido');
     transactionIds.add(item.id);
     const clean = { id: item.id, kind: item.kind, amount: item.amount, title: item.title.trim(), categoryId: item.categoryId, date: item.date };
+    if (item.createdAt !== undefined) {
+      if (typeof item.createdAt !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(item.createdAt) || Number.isNaN(Date.parse(item.createdAt))) throw new Error('Fecha de registro inválida');
+      clean.createdAt = item.createdAt;
+    }
     if (item.note !== undefined) {
       if (typeof item.note !== 'string' || item.note.length > 160) throw new Error('Detalle inválido');
       if (item.note.trim()) clean.note = item.note.trim();
@@ -233,9 +237,10 @@ async function openStore(userDataPath, initialStatePath) {
   function commitBatch(id) {
     const currentBatch = batch(id);
     if (!currentBatch || currentBatch.status !== 'pending') throw new Error('Este lote ya no está pendiente');
+    const createdAt = new Date().toISOString();
     const entries = currentBatch.rows.filter((row) => row.include === true).map((row) => ({
       id: 'd' + crypto.randomUUID().replace(/-/g, ''), kind: row.kind, amount: row.amount, title: row.title,
-      categoryId: row.categoryId, date: row.date, ...(row.time ? { note: 'Hora: ' + row.time } : {})
+      categoryId: row.categoryId, date: row.date, createdAt, ...(row.time ? { note: 'Hora: ' + row.time } : {})
     }));
     const current = getState();
     const clean = validateState({ ...current.data, transactions: [...current.data.transactions, ...entries] });
