@@ -455,29 +455,48 @@ function renderChart(items, heading) {
       : '<div class="chart-empty">' + icon('chart', 26) + '<strong>Sin movimientos en este mes</strong><span>Elegí otro período o agregá un movimiento.</span></div>') + '</section>';
 }
 
+function breakdownData(items) {
+  const expenses = items.filter(function (item) { return item.kind === 'expense'; });
+  const total = expenses.reduce(function (sum, item) { return sum + item.amount; }, 0);
+  const byCategory = new Map();
+  expenses.forEach(function (item) {
+    const entry = byCategory.get(item.categoryId) || { id: item.categoryId, amount: 0, count: 0 };
+    entry.amount += item.amount;
+    entry.count++;
+    byCategory.set(item.categoryId, entry);
+  });
+  const entries = Array.from(byCategory.values()).map(function (entry) {
+    const category = categoryById(entry.id);
+    return Object.assign(entry, { name: category?.name || 'Sin categoría', tone: category?.tone || 'lavender' });
+  }).sort(function (a, b) { return b.amount - a.amount; });
+  return { total: total, entries: entries };
+}
+
+function donutChart(entries, total, label, interactive, detailed) {
+  const circumference = 2 * Math.PI * 80;
+  let progress = 0;
+  const segments = entries.map(function (entry) {
+    const length = total ? entry.amount / total * circumference : 0;
+    const markup = '<circle cx="100" cy="100" r="80" fill="none" stroke="' + toneColor(entry.tone) + '" stroke-width="36" stroke-dasharray="' + length + ' ' + (circumference - length) + '" stroke-dashoffset="' + -progress + '" />';
+    progress += length;
+    return markup;
+  }).join('');
+  const tag = interactive ? 'button' : 'div';
+  const attrs = interactive ? ' type="button" data-action="breakdown-detail" data-breakdown-scope="' + (detailed === 'annual' ? 'annual' : 'month') + '" aria-label="Ver detalle de gastos por categoría en ' + escapeHtml(label) + '"' : ' role="img" aria-label="Distribución de gastos por categoría en ' + escapeHtml(label) + '"';
+  return '<' + tag + ' class="donut' + (detailed === 'large' ? ' donut-large' : '') + (interactive ? ' donut-button' : '') + '"' + attrs + '><svg class="donut-svg" viewBox="0 0 200 200" aria-hidden="true" focusable="false"><circle cx="100" cy="100" r="80" fill="none" stroke="var(--border)" stroke-width="36" /><g transform="rotate(-90 100 100)">' + segments + '</g></svg><span class="donut-center"><small>Total</small><strong>' + money(total) + '</strong></span></' + tag + '>';
+}
+
 function categoryBreakdown(items, label) {
   items = items || selectedTransactions();
   label = label || monthLabel(selectedMonth);
-  const total = items.filter(function (item) { return item.kind === 'expense'; }).reduce(function (sum, item) { return sum + item.amount; }, 0);
-  const byCategory = new Map();
-  items.filter(function (item) { return item.kind === 'expense'; }).forEach(function (item) {
-    byCategory.set(item.categoryId, (byCategory.get(item.categoryId) || 0) + item.amount);
-  });
-  const entries = Array.from(byCategory.entries()).sort(function (a, b) { return b[1] - a[1]; });
-  const top = entries.slice(0, 3).map(function (entry) { return { id: entry[0], name: (categoryById(entry[0]) || {}).name || 'Sin categoría', amount: entry[1], tone: (categoryById(entry[0]) || {}).tone || 'lavender' }; });
-  const other = entries.slice(3).reduce(function (sum, entry) { return sum + entry[1]; }, 0);
+  const breakdown = breakdownData(items);
+  const top = breakdown.entries.slice(0, 3);
+  const other = breakdown.entries.slice(3).reduce(function (sum, entry) { return sum + entry.amount; }, 0);
   if (other) top.push({ name: 'Otros', amount: other, tone: 'muted' });
-  let current = 0;
-  const stops = top.map(function (entry) {
-    const start = current;
-    current += total ? entry.amount / total * 100 : 0;
-    return toneColor(entry.tone) + ' ' + start.toFixed(2) + '% ' + current.toFixed(2) + '%';
-  });
-  const gradient = stops.length ? 'conic-gradient(' + stops.join(', ') + ')' : 'conic-gradient(var(--border) 0% 100%)';
   const list = top.length ? top.map(function (entry) {
     return '<li>' + (entry.id ? '<button class="legend-link" type="button" data-category-detail="' + escapeHtml(entry.id) + '" aria-label="Ver detalle de ' + escapeHtml(entry.name) + '">' : '<span class="legend-link">') + '<span class="legend-name"><span class="legend-dot ' + toneClass(entry.tone) + '"' + toneStyle(entry.tone) + '></span>' + escapeHtml(entry.name) + '</span><strong>' + money(entry.amount) + '</strong>' + (entry.id ? '</button>' : '</span>') + '</li>';
   }).join('') : '<li class="empty-legend">Todavía no hay gastos en este período.</li>';
-  return '<section class="panel breakdown-panel"><div class="panel-heading"><div><p class="section-eyebrow">EN QUÉ SE FUE</p><h2>Por categoría</h2></div><span class="panel-period">' + escapeHtml(label) + '</span></div><div class="breakdown-body"><div class="donut" style="background:' + gradient + '" role="img" aria-label="Distribución de gastos por categoría en ' + escapeHtml(label) + '"><div class="donut-center"><small>Total</small><strong>' + money(total) + '</strong></div></div><ul class="legend">' + list + '</ul></div></section>';
+  return '<section class="panel breakdown-panel"><div class="panel-heading"><div><p class="section-eyebrow">EN QUÉ SE FUE</p><h2>Por categoría</h2></div><span class="panel-period">' + escapeHtml(label) + '</span></div><div class="breakdown-body">' + donutChart(top, breakdown.total, label, breakdown.total > 0, route === 'annual' ? 'annual' : 'month') + '<ul class="legend">' + list + '</ul></div>' + (breakdown.total > 0 ? '<p class="breakdown-hint">Tocá la rueda para ver el detalle.</p>' : '') + '</section>';
 }
 
 function transactionRow(item, compact) {
@@ -847,7 +866,27 @@ function mergeConceptsModal() {
       '<div class="dialog-actions"><button class="button button-outline" type="button" data-action="close-modal">Cancelar</button><button class="button button-primary" type="submit">Unir nombres</button></div></form></div>';
 }
 
+function breakdownModal() {
+  const annual = modal.scope === 'annual';
+  const label = annual ? String(annualYear) : monthLabel(selectedMonth);
+  const breakdown = breakdownData(annual ? yearTransactions(annualYear) : selectedTransactions());
+  const rows = breakdown.entries.map(function (entry) {
+    const percent = breakdown.total ? entry.amount / breakdown.total * 100 : 0;
+    const value = percent < 1 ? '&lt;1%' : percent.toLocaleString('es-AR', { maximumFractionDigits: 1 }) + '%';
+    const inner = '<span class="breakdown-detail-name"><span class="legend-dot ' + toneClass(entry.tone) + '"' + toneStyle(entry.tone) + '></span><strong>' + escapeHtml(entry.name) + '</strong></span><span class="breakdown-detail-value"><strong>' + money(entry.amount) + '</strong><small>' + value + '</small></span><span class="breakdown-detail-meta">' + entry.count + (entry.count === 1 ? ' movimiento' : ' movimientos') + '</span><span class="breakdown-detail-track"><span style="width:' + percent.toFixed(2) + '%;background:' + toneColor(entry.tone) + '"></span></span>';
+    return annual
+      ? '<div class="breakdown-detail-row">' + inner + '</div>'
+      : '<button class="breakdown-detail-row" type="button" data-category-detail="' + escapeHtml(entry.id) + '" aria-label="Ver análisis de ' + escapeHtml(entry.name) + '">' + inner + '</button>';
+  }).join('');
+  return '<div class="modal-backdrop" data-action="close-modal"></div><div class="dialog breakdown-dialog" role="dialog" aria-modal="true" aria-labelledby="dialog-title">' +
+    '<div class="dialog-head"><div><p class="eyebrow">' + (annual ? 'RESUMEN ANUAL' : 'RESUMEN MENSUAL') + '</p><h2 id="dialog-title">Gastos por categoría</h2><span class="breakdown-period">' + escapeHtml(label) + '</span></div><button class="icon-button" data-action="close-modal" type="button" aria-label="Cerrar">' + icon('close', 20) + '</button></div>' +
+    '<div class="breakdown-dialog-chart">' + donutChart(breakdown.entries, breakdown.total, label, false, 'large') + '<p>' + breakdown.entries.length + (breakdown.entries.length === 1 ? ' categoría' : ' categorías') + ' · ' + breakdown.entries.reduce(function (sum, entry) { return sum + entry.count; }, 0) + ' gastos</p></div>' +
+    '<div class="breakdown-detail-list">' + rows + '</div>' +
+    (annual ? '<p class="breakdown-detail-note">Elegí un mes para analizar una categoría y sus movimientos.</p>' : '<p class="breakdown-detail-note">Tocá una categoría para ver sus movimientos y comercios.</p>') + '</div>';
+}
+
 function renderModal() {
+  if (modal.type === 'breakdown') return breakdownModal();
   if (modal.type === 'transaction') return transactionModal();
   if (modal.type === 'merge-concepts') return mergeConceptsModal();
   if (modal.type === 'savings') return savingsModal();
@@ -1157,6 +1196,7 @@ document.addEventListener('click', function (event) {
   const action = event.target.closest('[data-action]');
   if (!action) return;
   switch (action.dataset.action) {
+    case 'breakdown-detail': modal = { type: 'breakdown', scope: action.dataset.breakdownScope }; render(); break;
     case 'toggle-theme':
       data.theme = data.theme === 'light' ? 'dark' : 'light'; saveData(); render(); break;
     case 'add-transaction': openTransaction(route === 'transactions' && filter === 'income' ? 'income' : 'expense'); break;
