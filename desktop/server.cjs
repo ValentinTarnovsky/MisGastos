@@ -64,7 +64,7 @@ async function readBody(req) {
   return JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}');
 }
 
-function startServer(store, root, onPending) {
+function startServer(store, root, onPending, discordBot, discordConfig) {
   const pending = new Map();
   let pairToken = null;
   let pairExpires = 0;
@@ -120,7 +120,12 @@ function startServer(store, root, onPending) {
       }
 
       if (pathname.startsWith('/api/') && !isLocal) return json(res, 403, { error: 'Esta acción se hace en la PC' });
-      if (pathname === '/api/desktop-info' && req.method === 'GET') return json(res, 200, { networks: networkOptions(), devices: store.listDevices(), pending: [...pending.entries()].filter(([, item]) => item.status === 'pending' && Date.now() - item.createdAt < 300000).map(([id, item]) => ({ id, name: item.name })), backupDir: store.backupDir });
+      if (pathname === '/api/desktop-info' && req.method === 'GET') return json(res, 200, { networks: networkOptions(), devices: store.listDevices(), pending: [...pending.entries()].filter(([, item]) => item.status === 'pending' && Date.now() - item.createdAt < 300000).map(([id, item]) => ({ id, name: item.name })), backupDir: store.backupDir, discord: discordBot.info() });
+      if (pathname === '/api/discord/config' && req.method === 'POST') {
+        discordConfig.update(await readBody(req));
+        await discordBot.start();
+        return json(res, 200, discordBot.info());
+      }
       if (pathname === '/api/pair/start' && req.method === 'POST') {
         const body = await readBody(req);
         const addresses = networkOptions();
@@ -151,14 +156,15 @@ function startServer(store, root, onPending) {
       }
       if (pathname === '/api/export' && req.method === 'GET') {
         const state = store.getState();
-        const bytes = Buffer.from(JSON.stringify({ format: 'MisGastos', version: 1, exportedAt: new Date().toISOString(), state: state.data }, null, 2));
+        const bytes = Buffer.from(JSON.stringify({ format: 'MisGastos', version: 2, exportedAt: new Date().toISOString(), state: state.data, merchantRules: store.merchantRules() }, null, 2));
         res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Content-Disposition': 'attachment; filename="MisGastos-copia.json"', 'Content-Length': bytes.length, 'Cache-Control': 'no-store' });
         return res.end(bytes);
       }
       if (pathname === '/api/restore' && req.method === 'POST') {
         const body = await readBody(req);
-        if (body.format !== 'MisGastos' || body.version !== 1) return json(res, 400, { error: 'No es una copia de MisGastos' });
-        return json(res, 200, store.restoreState(body.state));
+        if (body.format !== 'MisGastos' || ![1, 2].includes(body.version)) return json(res, 400, { error: 'No es una copia de MisGastos' });
+        const restored = store.restoreState(body.state, body.version === 2 ? body.merchantRules || [] : []);
+        return json(res, 200, restored);
       }
 
       if (pathname === '/runtime.js') return res.writeHead(200, { 'Content-Type': TYPES['.js'], 'Cache-Control': 'no-store' }).end('window.MISGASTOS_LIVE=true;window.MISGASTOS_DESKTOP=' + JSON.stringify(isLocal) + ';');

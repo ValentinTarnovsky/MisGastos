@@ -1,8 +1,10 @@
-const { app, BrowserWindow, Menu, Tray, nativeImage, dialog, shell } = require('electron');
+const { app, BrowserWindow, Menu, Tray, nativeImage, dialog, shell, safeStorage } = require('electron');
 const fs = require('node:fs');
 const path = require('node:path');
 const { openStore } = require('./store.cjs');
 const { startServer, PORT } = require('./server.cjs');
+const { createDiscordConfig } = require('./discord-config.cjs');
+const { createDiscordBot } = require('./discord-bot.cjs');
 
 app.setName('MisGastos');
 app.setAppUserModelId('ar.misgastos.app');
@@ -13,6 +15,7 @@ let mainWindow = null;
 let tray = null;
 let server = null;
 let store = null;
+let discordBot = null;
 let quitting = false;
 const root = path.resolve(__dirname, '..');
 
@@ -78,10 +81,12 @@ app.whenReady().then(async () => {
   try {
     const userData = app.getPath('userData');
     store = await openStore(userData, path.join(root, 'initial-state.json'));
+    const discordConfig = createDiscordConfig(userData, safeStorage);
+    discordBot = createDiscordBot(store, discordConfig);
     const started = await startServer(store, root, () => {
       showWindow();
       if (mainWindow) mainWindow.webContents.executeJavaScript('window.MISGASTOS_PENDING && window.MISGASTOS_PENDING()').catch(() => {});
-    });
+    }, discordBot, discordConfig);
     server = started.server;
     createWindow();
     const icon = nativeImage.createFromPath(path.join(root, 'assets', 'misgastos-logo.png')).resize({ width: 20, height: 20 });
@@ -89,6 +94,7 @@ app.whenReady().then(async () => {
     tray.setToolTip('MisGastos');
     tray.on('click', () => showWindow());
     trayMenu();
+    discordBot.start().catch((error) => console.error('No se pudo iniciar Discord:', error));
     setupLogin();
     trayMenu();
   } catch (error) {
@@ -98,4 +104,4 @@ app.whenReady().then(async () => {
   }
 });
 
-app.on('before-quit', () => { quitting = true; if (server) server.close(); if (store) store.close(); });
+app.on('before-quit', () => { quitting = true; if (discordBot) discordBot.stop(); if (server) server.close(); if (store) store.close(); });

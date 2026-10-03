@@ -60,6 +60,9 @@ async function openStore(userDataPath, initialStatePath) {
   let db = fs.existsSync(dbPath) ? new SQL.Database(fs.readFileSync(dbPath)) : new SQL.Database();
   db.run('CREATE TABLE IF NOT EXISTS app_state (id INTEGER PRIMARY KEY CHECK (id = 1), revision INTEGER NOT NULL, payload TEXT NOT NULL)');
   db.run('CREATE TABLE IF NOT EXISTS devices (id TEXT PRIMARY KEY, token_hash TEXT UNIQUE NOT NULL, name TEXT NOT NULL, created_at TEXT NOT NULL)');
+  db.run('CREATE TABLE IF NOT EXISTS merchant_rules (merchant_key TEXT PRIMARY KEY, merchant TEXT NOT NULL, category_id TEXT NOT NULL)');
+  db.run('CREATE TABLE IF NOT EXISTS discord_batches (id TEXT PRIMARY KEY, channel_id TEXT NOT NULL, author_id TEXT NOT NULL, status TEXT NOT NULL, payload TEXT NOT NULL, created_at TEXT NOT NULL)');
+  db.run('CREATE TABLE IF NOT EXISTS discord_seen (message_id TEXT PRIMARY KEY)');
 
   function persist() {
     const temporary = dbPath + '.tmp';
@@ -109,11 +112,20 @@ async function openStore(userDataPath, initialStatePath) {
     return getState();
   }
 
-  function restoreState(state) {
+  function restoreState(state, rules) {
     const clean = validateState(state);
+    const restoredRules = rules === undefined ? null : validatedMerchantRules(rules, clean.categories);
     backupNow();
     const revision = getState().revision + 1;
-    db.run('UPDATE app_state SET revision = ?, payload = ? WHERE id = 1', [revision, JSON.stringify(clean)]);
+    db.run('BEGIN TRANSACTION');
+    try {
+      db.run('UPDATE app_state SET revision = ?, payload = ? WHERE id = 1', [revision, JSON.stringify(clean)]);
+      if (restoredRules) {
+        db.run('DELETE FROM merchant_rules');
+        restoredRules.forEach((rule) => db.run('INSERT OR REPLACE INTO merchant_rules VALUES (?, ?, ?)', [rule.key, rule.merchant, rule.categoryId]));
+      }
+      db.run('COMMIT');
+    } catch (error) { db.run('ROLLBACK'); throw error; }
     persist();
     return getState();
   }
@@ -145,7 +157,105 @@ async function openStore(userDataPath, initialStatePath) {
     persist();
   }
 
-  return { getState, saveState, restoreState, addDevice, deviceForToken, listDevices, revokeDevice, backupDir, dbPath, backupNow, close: () => db.close() };
+  function merchantKey(name) {
+    return String(name || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('es-AR').replace(/[^a-z0-9]+/g, ' ').trim();
+  }
+
+  function merchantRules() {
+    const result = db.exec('SELECT merchant, category_id FROM merchant_rules ORDER BY merchant');
+    return result.length ? result[0].values.map(([merchant, categoryId]) => ({ merchant, categoryId })) : [];
+  }
+
+  function setMerchantRule(merchant, categoryId) {
+    const name = String(merchant || '').trim();
+    const key = merchantKey(name);
+    if (!key || name.length > 80 || !getState().data.categories.some((item) => item.id === categoryId && item.kind === 'expense')) throw new Error('Regla de comercio inválida');
+    db.run('INSERT OR REPLACE INTO merchant_rules (merchant_key, merchant, category_id) VALUES (?, ?, ?)', [key, name, categoryId]);
+    persist();
+  }
+
+  function validatedMerchantRules(rules, categories) {
+    if (!Array.isArray(rules) || rules.length > 1000) throw new Error('Reglas inválidas');
+    return rules.map((rule) => {
+      const merchant = String(rule?.merchant || '').trim();
+      const key = merchantKey(merchant);
+      if (!key || merchant.length > 80 || !categories.some((item) => item.id === rule.categoryId && item.kind === 'expense')) throw new Error('Regla inválida');
+      return { key, merchant, categoryId: rule.categoryId };
+    });
+  }
+
+  function replaceMerchantRules(rules) {
+    const clean = validatedMerchantRules(rules, getState().data.categories);
+    db.run('DELETE FROM merchant_rules');
+    clean.forEach((rule) => db.run('INSERT OR REPLACE INTO merchant_rules VALUES (?, ?, ?)', [rule.key, rule.merchant, rule.categoryId]));
+    persist();
+  }
+
+  function batch(id) {
+    const stmt = db.prepare('SELECT id, channel_id, author_id, status, payload FROM discord_batches WHERE id = ?');
+    stmt.bind([id]);
+    const row = stmt.step() ? stmt.getAsObject() : null;
+    stmt.free();
+    return row ? { id: row.id, channelId: row.channel_id, authorId: row.author_id, status: row.status, rows: JSON.parse(row.payload) } : null;
+  }
+
+  function latestPendingBatch(channelId, authorId) {
+    const stmt = db.prepare("SELECT id FROM discord_batches WHERE channel_id = ? AND author_id = ? AND status = 'pending' ORDER BY created_at DESC LIMIT 1");
+    stmt.bind([channelId, authorId]);
+    const id = stmt.step() ? stmt.getAsObject().id : null;
+    stmt.free();
+    return id ? batch(id) : null;
+  }
+
+  function saveBatch(input) {
+    if (!/^\d{17,22}$/.test(input.id) || !/^\d{17,22}$/.test(input.channelId) || !/^\d{17,22}$/.test(input.authorId) || !Array.isArray(input.rows) || input.rows.length > 30) throw new Error('Lote inválido');
+    if (batch(input.id)) return batch(input.id);
+    db.run('INSERT INTO discord_batches VALUES (?, ?, ?, ?, ?, ?)', [input.id, input.channelId, input.authorId, 'pending', JSON.stringify(input.rows), new Date().toISOString()]);
+    persist();
+    return batch(input.id);
+  }
+
+  function updateBatch(id, rows, status = 'pending') {
+    if (!batch(id) || !Array.isArray(rows) || rows.length > 30 || !['pending', 'cancelled'].includes(status)) throw new Error('Lote inválido');
+    db.run('UPDATE discord_batches SET payload = ?, status = ? WHERE id = ?', [JSON.stringify(rows), status, id]);
+    persist();
+    return batch(id);
+  }
+
+  function commitBatch(id) {
+    const currentBatch = batch(id);
+    if (!currentBatch || currentBatch.status !== 'pending') throw new Error('Este lote ya no está pendiente');
+    const entries = currentBatch.rows.filter((row) => row.include === true).map((row) => ({
+      id: 'd' + crypto.randomUUID().replace(/-/g, ''), kind: row.kind, amount: row.amount, title: row.title,
+      categoryId: row.categoryId, date: row.date, ...(row.time ? { note: 'Hora: ' + row.time } : {})
+    }));
+    const current = getState();
+    const clean = validateState({ ...current.data, transactions: [...current.data.transactions, ...entries] });
+    backupDaily();
+    db.run('BEGIN TRANSACTION');
+    try {
+      db.run('UPDATE app_state SET revision = ?, payload = ? WHERE id = 1', [current.revision + 1, JSON.stringify(clean)]);
+      db.run("UPDATE discord_batches SET status = 'committed' WHERE id = ?", [id]);
+      db.run('COMMIT');
+    } catch (error) { db.run('ROLLBACK'); throw error; }
+    persist();
+    return entries.length;
+  }
+
+  function hasSeenDiscordMessage(id) {
+    const stmt = db.prepare('SELECT 1 FROM discord_seen WHERE message_id = ?');
+    stmt.bind([id]);
+    const found = stmt.step();
+    stmt.free();
+    return found;
+  }
+
+  function markDiscordMessageSeen(id) {
+    db.run('INSERT OR IGNORE INTO discord_seen VALUES (?)', [id]);
+    persist();
+  }
+
+  return { getState, saveState, restoreState, addDevice, deviceForToken, listDevices, revokeDevice, merchantRules, setMerchantRule, replaceMerchantRules, batch, latestPendingBatch, saveBatch, updateBatch, commitBatch, hasSeenDiscordMessage, markDiscordMessageSeen, backupDir, dbPath, backupNow, close: () => db.close() };
 }
 
 module.exports = { openStore, validateState };

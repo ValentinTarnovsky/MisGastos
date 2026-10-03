@@ -18,6 +18,7 @@ MisGastos es una aplicación de escritorio para Windows. Guarda los datos en SQL
 - Cambiar entre tema claro y oscuro. La interfaz se adapta a PC e iPhone.
 - Exportar, restaurar y conservar copias locales automáticas.
 - Vincular un iPhone con un QR temporal, aprobarlo desde la PC y revocar el acceso cuando quieras.
+- Enviar capturas o mensajes a un bot privado de Discord, corregir su propuesta y confirmar un lote antes de guardarlo.
 
 ## Capturas
 
@@ -70,6 +71,17 @@ La primera apertura muestra la ventana. En los siguientes inicios de Windows, Mi
 5. Aprobá la solicitud que aparece en la PC. En Safari podés usar **Compartir > Agregar a Inicio** para crear el acceso directo con el logo.
 
 El QR vence a los cinco minutos. Los celulares vinculados aparecen en **Ajustes** y se pueden revocar. El acceso móvil usa el servidor local de la PC en el puerto `4174`. No abras ese puerto a Internet; para acceder fuera de casa, usá Tailscale en ambos dispositivos. El iPhone accede mediante Safari, mientras que la aplicación instalada se ejecuta en Windows.
+
+## Registrar desde Discord
+
+1. Creá una aplicación y su bot en [Discord Developer Portal](https://discord.com/developers/applications). Activá **Message Content Intent** en la sección Bot.
+2. Invitá el bot a un servidor privado con permisos para ver el canal elegido, leer el historial y enviar mensajes. Copiá el ID de ese canal desde Discord con el modo desarrollador activado.
+3. Creá una clave de [OpenAI API](https://platform.openai.com/api-keys). En la app de Windows, abrí **Ajustes > Discord > Configurar bot** y pegá el token del bot, la clave y el ID del canal. Activá el bot y guardá.
+4. Mandá una captura o un texto como `560 en Starbucks`. El bot te devuelve una lista. Escribí `ignora el 2`, `el 3 va en Comida` o `recordá que Pepito Miguel es verdulero` para corregirla. Escribí `guardar` para registrar las filas marcadas.
+
+Solo el dueño del servidor puede darle instrucciones al bot, y solo en el canal configurado. La PC tiene que estar encendida y MisGastos activo en segundo plano. Al reconectarse, el bot revisa los 100 mensajes más recientes del canal. Las capturas enviadas se procesan con GPT-6 Luna en Fast mode; su uso se factura en la cuenta de OpenAI API. Los tokens se cifran localmente en Windows y no se exportan. Las reglas aprendidas sí se guardan en SQLite y en las copias JSON.
+
+Los cargos en USD y las filas que parezcan de tarjeta de crédito quedan fuera de la propuesta por defecto. Los importes en ARS se redondean al peso más cercano para respetar el formato actual de MisGastos. Revisá la propuesta antes de confirmar, especialmente en transferencias e ingresos de origen incierto.
 
 ## Datos y copias
 
