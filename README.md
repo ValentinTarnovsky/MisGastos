@@ -76,10 +76,11 @@ El QR vence a los cinco minutos. Los celulares vinculados aparecen en **Ajustes*
 
 1. Creá una aplicación y su bot en [Discord Developer Portal](https://discord.com/developers/applications). Activá **Message Content Intent** en la sección Bot.
 2. Invitá el bot a un servidor privado con permisos para ver el canal elegido, leer el historial y enviar mensajes. Copiá el ID de ese canal desde Discord con el modo desarrollador activado.
-3. Creá una clave de [OpenAI API](https://platform.openai.com/api-keys). En la app de Windows, abrí **Ajustes > Discord > Configurar bot** y pegá el token del bot, la clave y el ID del canal. Activá el bot y guardá.
-4. Mandá una captura o un texto como `560 en Starbucks`. El bot te devuelve una lista. Escribí `ignora el 2`, `el 3 va en Comida` o `recordá que Pepito Miguel es verdulero` para corregirla. Escribí `guardar` para registrar las filas marcadas.
+3. Instalá [Codex CLI](https://learn.chatgpt.com/docs/codex/cli) en la PC y ejecutá `codex login` con tu cuenta de ChatGPT. Comprobá con `codex login status` que diga `Logged in using ChatGPT`.
+4. En la app de Windows, abrí **Ajustes > Discord > Configurar bot** y pegá el token del bot y el ID del canal. Activá el bot y guardá.
+5. Mandá una captura o un texto como `560 en Starbucks`. El bot te devuelve una lista. Escribí `ignora el 2`, `el 3 va en Comida` o `recordá que Pepito Miguel es verdulero` para corregirla. Escribí `guardar` para registrar las filas marcadas.
 
-Solo el dueño del servidor puede darle instrucciones al bot, y solo en el canal configurado. La PC tiene que estar encendida y MisGastos activo en segundo plano. Al reconectarse, el bot revisa los 100 mensajes más recientes del canal. Las capturas enviadas se procesan con GPT-6 Luna en Fast mode; su uso se factura en la cuenta de OpenAI API. Los tokens se cifran localmente en Windows y no se exportan. Las reglas aprendidas sí se guardan en SQLite y en las copias JSON.
+Solo el dueño del servidor puede darle instrucciones al bot, y solo en el canal configurado. La PC tiene que estar encendida y MisGastos activo en segundo plano. Al reconectarse, el bot revisa los 100 mensajes más recientes del canal. Las capturas enviadas se procesan con GPT-6 Luna en Fast mode mediante Codex CLI y consumen el límite de uso de tu plan ChatGPT. No se necesita ni se usa una clave de OpenAI API. Fast mode consume más cuota que el modo estándar. El token de Discord se cifra localmente en Windows y no se exporta. Las reglas aprendidas sí se guardan en SQLite y en las copias JSON.
 
 Los cargos en USD y las filas que parezcan de tarjeta de crédito quedan fuera de la propuesta por defecto. Los importes en ARS se redondean al peso más cercano para respetar el formato actual de MisGastos. Revisá la propuesta antes de confirmar, especialmente en transferencias e ingresos de origen incierto.
 

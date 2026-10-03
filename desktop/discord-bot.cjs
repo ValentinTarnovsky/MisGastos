@@ -64,7 +64,7 @@ function createDiscordBot(store, config) {
         await message.reply({ content: 'No hay una propuesta pendiente. Mandá una captura o un gasto primero.', allowedMentions: { parse: [] } });
       } else if (!pending && !attachments.length && /^(record[aá]|aprend[eé]|acordate)/i.test(input)) {
         const categories = store.getState().data.categories;
-        const correction = await interpretCorrection({ apiKey: credentials.apiKey, message: input, batch: { rows: [] }, categories });
+        const correction = await interpretCorrection({ message: input, batch: { rows: [] }, categories });
         const category = categories.find((item) => item.id === correction.categoryId && item.kind === 'expense');
         const merchant = String(correction.merchant || '').trim();
         if (!category || !merchant) throw new Error('Decime el comercio y una categoría existente, por ejemplo: "recordá que Pepito Miguel va en Comida"');
@@ -78,7 +78,7 @@ function createDiscordBot(store, config) {
         await message.reply({ content: 'Descarté la propuesta. No cargué movimientos.', allowedMentions: { parse: [] } });
       } else if (pending && !attachments.length && !/^\s*(?:nuevo\s+)?(?:\$\s*)?\d[\d.,]*\s+/.test(input)) {
         const categories = store.getState().data.categories;
-        const correction = await interpretCorrection({ apiKey: credentials.apiKey, message: input, batch: pending, categories });
+        const correction = await interpretCorrection({ message: input, batch: pending, categories });
         const index = correction.index - 1;
         const row = pending.rows[index];
         const category = categories.find((item) => item.id === correction.categoryId);
@@ -118,7 +118,7 @@ function createDiscordBot(store, config) {
       } else if (attachments.length || input) {
         const images = await Promise.all(attachments.map(downloadImage));
         const state = store.getState().data;
-        const rows = await extractBatch({ apiKey: credentials.apiKey, images, caption: input, categories: state.categories, rules: store.merchantRules(), existing: state.transactions, today: todayInArgentina() });
+        const rows = await extractBatch({ images, caption: input, categories: state.categories, rules: store.merchantRules(), existing: state.transactions, today: todayInArgentina() });
         if (pending) store.updateBatch(pending.id, pending.rows, 'cancelled');
         const batch = store.saveBatch({ id: message.id, channelId: message.channelId, authorId: message.author.id, rows });
         await message.reply({ content: preview(batch, state.categories), allowedMentions: { parse: [] } });
@@ -136,7 +136,7 @@ function createDiscordBot(store, config) {
     if (client) { client.destroy(); client = null; }
     const credentials = config.credentials();
     if (!credentials.enabled) { setStatus('desconectado'); return; }
-    if (!credentials.botToken || !credentials.apiKey || !credentials.channelId) { setStatus('error', 'Falta completar la configuración'); return; }
+    if (!credentials.botToken || !credentials.channelId) { setStatus('error', 'Falta completar la configuración'); return; }
     const nextClient = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent] });
     client = nextClient;
     setStatus('conectando');

@@ -41,24 +41,25 @@ test('Discord batch stores only confirmed included movements and learns merchant
 });
 
 test('Vision proposal rounds ARS, applies learned rules and pauses USD or uncertain income', async () => {
-  const originalFetch = global.fetch;
-  global.fetch = async () => ({ ok: true, json: async () => ({ output: [{ content: [{ type: 'output_text', text: JSON.stringify({ rows: [
+  const runStructured = async (_schema, prompt, images) => {
+    assert.match(prompt, /ignora AUSA/);
+    assert.deepEqual(images, []);
+    return { rows: [
     { title: 'Pepito Miguel', kind: 'expense', amount: 1197.05, currency: 'ARS', date: '2026-10-01', time: '12:10', categoryId: null, include: false, reason: 'Persona sin categoría' },
     { title: 'AUSA', kind: 'expense', amount: 1436.13, currency: 'ARS', date: '2026-10-01', time: '09:08', categoryId: 'services', include: true, reason: null },
     { title: 'Cloudflare', kind: 'expense', amount: 5, currency: 'USD', date: '2026-10-01', time: '07:43', categoryId: 'services', include: true, reason: null },
     { title: 'Ingreso de dinero', kind: 'income', amount: 858330, currency: 'ARS', date: '2026-10-01', time: '12:38', categoryId: null, include: false, reason: 'Origen incierto' }
-  ] }) }] }] }) });
-  try {
-    const rows = await extractBatch({ apiKey: 'test', images: [], caption: 'ignora AUSA', categories: [
+    ] };
+  };
+  const rows = await extractBatch({ images: [], caption: 'ignora AUSA', categories: [
       { id: 'food', name: 'Comida', kind: 'expense' }, { id: 'services', name: 'Servicios', kind: 'expense' }, { id: 'other-income', name: 'Ingresos', kind: 'income' }
-    ], rules: [{ merchant: 'Pepito Miguel', categoryId: 'food' }], existing: [], today: '2026-10-03' });
-    assert.equal(rows[0].amount, 1197);
-    assert.equal(rows[0].categoryId, 'food');
-    assert.equal(rows[0].include, true);
-    assert.equal(rows[1].include, false);
-    assert.equal(rows[2].include, false);
-    assert.equal(rows[3].include, false);
-  } finally { global.fetch = originalFetch; }
+    ], rules: [{ merchant: 'Pepito Miguel', categoryId: 'food' }], existing: [], today: '2026-10-03', runStructured });
+  assert.equal(rows[0].amount, 1197);
+  assert.equal(rows[0].categoryId, 'food');
+  assert.equal(rows[0].include, true);
+  assert.equal(rows[1].include, false);
+  assert.equal(rows[2].include, false);
+  assert.equal(rows[3].include, false);
 });
 
 test('Discord credentials are stored encrypted and never returned to the UI', () => {
@@ -70,14 +71,14 @@ test('Discord credentials are stored encrypted and never returned to the UI', ()
   };
   try {
     const config = createDiscordConfig(folder, safeStorage);
-    const result = config.update({ enabled: true, channelId: '1555788208703414335', botToken: 'bot-secret', apiKey: 'api-secret' });
-    config.update({ enabled: true, channelId: '1555788208703414335', botToken: '', apiKey: '' });
+    const result = config.update({ enabled: true, channelId: '1555788208703414335', botToken: 'bot-secret' });
+    config.update({ enabled: true, channelId: '1555788208703414335', botToken: '' });
     assert.equal(result.hasBotToken, true);
-    assert.equal(result.hasApiKey, true);
+    assert.equal('hasApiKey' in result, false);
     assert.equal(JSON.stringify(result).includes('secret'), false);
     const fresh = createDiscordConfig(folder, safeStorage);
     assert.equal(fresh.credentials().botToken, 'bot-secret');
-    assert.equal(fresh.credentials().apiKey, 'api-secret');
+    assert.equal('apiKey' in fresh.credentials(), false);
     assert.equal(fs.readFileSync(path.join(folder, 'discord-config.json'), 'utf8').includes('bot-secret'), false);
   } finally {
     const resolved = path.resolve(folder);

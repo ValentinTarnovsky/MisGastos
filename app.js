@@ -152,7 +152,7 @@ let stateRevision = 0;
 let saveQueue = Promise.resolve();
 let savesPending = 0;
 let saveGeneration = 0;
-let desktopInfo = { networks: [], devices: [], pending: [], backupDir: '', discord: { enabled: false, status: 'desconectado', channelId: '', hasBotToken: false, hasApiKey: false } };
+let desktopInfo = { networks: [], devices: [], pending: [], backupDir: '', discord: { enabled: false, status: 'desconectado', channelId: '', hasBotToken: false } };
 let pairingInfo = null;
 let selectedNetwork = '';
 let restoreCandidate = null;
@@ -828,9 +828,8 @@ function discordModal() {
     '<p class="settings-note">Usá un canal privado del servidor MisGastos. El bot solo leerá ese canal y solo aceptará mensajes del dueño del servidor.</p>' +
     '<form id="discord-form"><label class="field-label" for="discord-channel">ID del canal</label><input class="text-input" id="discord-channel" name="channelId" inputmode="numeric" value="' + escapeHtml(settings.channelId || '') + '" placeholder="Copiar ID del canal en Discord" required />' +
     '<label class="field-label" for="discord-token">Token del bot</label><input class="text-input" id="discord-token" name="botToken" type="password" autocomplete="off" placeholder="' + (settings.hasBotToken ? 'Guardado. Dejar vacío para conservarlo' : 'Pegá el token del bot') + '" />' +
-    '<label class="field-label" for="discord-api-key">Clave de OpenAI API</label><input class="text-input" id="discord-api-key" name="apiKey" type="password" autocomplete="off" placeholder="' + (settings.hasApiKey ? 'Guardada. Dejar vacío para conservarla' : 'Pegá tu API key') + '" />' +
     '<label class="discord-toggle"><input name="enabled" type="checkbox"' + (settings.enabled ? ' checked' : '') + ' /> Activar bot al iniciar MisGastos</label>' +
-    '<p class="settings-note">Las claves se cifran en esta PC y no se incluyen en la copia JSON ni en GitHub. OpenAI recibe únicamente el texto o las capturas que mandes al bot.</p>' +
+    '<p class="settings-note">El bot usa Codex CLI con tu sesión de ChatGPT en esta PC. Consume el límite de uso de tu plan, sin clave API. El token de Discord se cifra en Windows y no se exporta.</p>' +
     '<div class="dialog-actions"><button class="button button-outline" type="button" data-action="close-modal">Cancelar</button><button class="button button-primary" type="submit">Guardar conexión</button></div></form></div>';
 }
 
@@ -1288,7 +1287,7 @@ document.addEventListener('submit', function (event) {
   if (event.target.id === 'discord-form') {
     event.preventDefault();
     const form = new FormData(event.target);
-    const payload = { channelId: String(form.get('channelId') || '').trim(), botToken: String(form.get('botToken') || ''), apiKey: String(form.get('apiKey') || ''), enabled: form.has('enabled') };
+    const payload = { channelId: String(form.get('channelId') || '').trim(), botToken: String(form.get('botToken') || ''), enabled: form.has('enabled') };
     apiPost('/api/discord/config', payload).then(function (result) { desktopInfo.discord = result; modal = null; render(); toast(result.status === 'conectado' ? 'Bot conectado' : 'Configuración guardada'); }).catch(function (error) { toast(error.message); });
   } else if (event.target.id === 'merge-concepts-form') {
     event.preventDefault();

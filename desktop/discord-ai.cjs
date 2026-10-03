@@ -1,4 +1,10 @@
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const { spawn } = require('node:child_process');
+
 const MODEL = 'gpt-6-luna';
+const CODEX_TIMEOUT_MS = 180000;
 
 function keyOf(value) {
   return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('es-AR').replace(/[^a-z0-9]+/g, ' ').trim();
@@ -10,29 +16,66 @@ function validDate(value) {
   return !Number.isNaN(date.valueOf()) && date.toISOString().slice(0, 10) === value;
 }
 
-async function structuredResponse(apiKey, name, schema, content) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 60000);
+function codexExecutable() {
+  const installed = process.env.LOCALAPPDATA && path.join(process.env.LOCALAPPDATA, 'Programs', 'OpenAI', 'Codex', 'bin', 'codex.exe');
+  return installed && fs.existsSync(installed) ? installed : 'codex';
+}
+
+async function runCodex(schema, prompt, images = []) {
+  const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'misgastos-codex-'));
+  const schemaPath = path.join(folder, 'schema.json');
+  const outputPath = path.join(folder, 'result.json');
   try {
-    const response = await fetch('https://api.openai.com/v1/responses', {
-      method: 'POST', signal: controller.signal,
-      headers: { Authorization: 'Bearer ' + apiKey, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: MODEL, service_tier: 'fast', reasoning: { effort: 'low' },
-        store: false, max_output_tokens: 3000,
-        input: [{ role: 'user', content }],
-        text: { format: { type: 'json_schema', name, strict: true, schema } }
-      })
+    fs.writeFileSync(schemaPath, JSON.stringify(schema), 'utf8');
+    const imagePaths = images.map((image, index) => {
+      const extension = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp' }[image.mime];
+      if (!extension || !Buffer.isBuffer(image.bytes)) throw new Error('Formato de captura no válido');
+      const imagePath = path.join(folder, 'capture-' + index + '.' + extension);
+      fs.writeFileSync(imagePath, image.bytes);
+      return imagePath;
     });
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({}));
-      throw new Error('OpenAI: ' + (error.error?.message || 'Error HTTP ' + response.status));
-    }
-    const result = await response.json();
-    const text = result.output?.flatMap((item) => item.content || []).find((item) => item.type === 'output_text')?.text;
-    if (!text) throw new Error('El modelo no devolvió una respuesta utilizable');
-    return JSON.parse(text);
-  } finally { clearTimeout(timeout); }
+    const args = [
+      'exec', '--ephemeral', '--ignore-user-config', '--ignore-rules', '--skip-git-repo-check',
+      '--disable', 'shell_tool', '--disable', 'apps', '--disable', 'hooks', '--disable', 'multi_agent',
+      '--sandbox', 'read-only', '-C', folder, '-m', MODEL,
+      '-c', 'model_reasoning_effort="low"', '-c', 'service_tier="fast"',
+      '--output-schema', schemaPath, '-o', outputPath, '--color', 'never'
+    ];
+    if (imagePaths.length) args.push('--image', ...imagePaths);
+    args.push('-');
+    const environment = { ...process.env };
+    delete environment.OPENAI_API_KEY;
+    delete environment.CODEX_API_KEY;
+    await new Promise((resolve, reject) => {
+      const child = spawn(codexExecutable(), args, { cwd: folder, env: environment, windowsHide: true, shell: false, stdio: ['pipe', 'ignore', 'pipe'] });
+      let settled = false;
+      let timedOut = false;
+      let errorOutput = '';
+      const finish = (error) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeout);
+        if (error) reject(error); else resolve();
+      };
+      const timeout = setTimeout(() => { timedOut = true; child.kill(); }, CODEX_TIMEOUT_MS);
+      child.stderr.on('data', (chunk) => { errorOutput = (errorOutput + chunk.toString()).slice(-4000); });
+      child.on('error', () => finish(new Error('No encuentro Codex CLI en esta PC. Instalalo e iniciá sesión con ChatGPT.')));
+      child.on('close', (code) => {
+        if (timedOut) finish(new Error('Codex CLI tardó demasiado. Probá de nuevo.'));
+        else if (code === 0) finish();
+        else {
+          const loginProblem = /not logged in|authentication|unauthorized|login required/i.test(errorOutput);
+          finish(new Error(loginProblem ? 'Iniciá sesión en Codex CLI con tu cuenta de ChatGPT.' : 'Codex CLI no pudo analizar el mensaje. Revisá tu conexión o el límite de uso e intentá de nuevo.'));
+        }
+      });
+      child.stdin.on('error', () => {});
+      child.stdin.end(prompt);
+    });
+    if (!fs.existsSync(outputPath)) throw new Error('Codex CLI no devolvió una respuesta utilizable');
+    return JSON.parse(fs.readFileSync(outputPath, 'utf8'));
+  } finally {
+    fs.rmSync(folder, { recursive: true, force: true });
+  }
 }
 
 const rowSchema = {
@@ -52,7 +95,7 @@ const extractionSchema = {
   properties: { rows: { type: 'array', items: rowSchema } }, required: ['rows']
 };
 
-async function extractBatch({ apiKey, images, caption, categories, rules, existing, today }) {
+async function extractBatch({ images, caption, categories, rules, existing, today, runStructured = runCodex }) {
   const categoryList = categories.map((item) => ({ id: item.id, name: item.name, kind: item.kind }));
   const instructions = [
     'Extraé movimientos financieros de las imágenes o del mensaje. Respondé solo según el esquema JSON.',
@@ -70,9 +113,7 @@ async function extractBatch({ apiKey, images, caption, categories, rules, existi
     'Reglas conocidas: ' + JSON.stringify(rules),
     'Mensaje del usuario: ' + (caption || '(solo imagen)')
   ].join('\n');
-  const content = [{ type: 'input_text', text: instructions }];
-  images.forEach((image) => content.push({ type: 'input_image', image_url: 'data:' + image.mime + ';base64,' + image.bytes.toString('base64'), detail: 'original' }));
-  const output = await structuredResponse(apiKey, 'misgastos_movimientos', extractionSchema, content);
+  const output = await runStructured(extractionSchema, instructions, images);
   if (!Array.isArray(output.rows) || output.rows.length > 30) throw new Error('La captura contiene demasiados movimientos');
   const categoryMap = new Map(categories.map((item) => [item.id, item]));
   const ruleMap = new Map(rules.map((rule) => [keyOf(rule.merchant), rule.categoryId]));
@@ -117,8 +158,8 @@ const correctionSchema = {
   required: ['action', 'index', 'categoryId', 'merchant', 'remember']
 };
 
-async function interpretCorrection({ apiKey, message, batch, categories }) {
-  const content = [{ type: 'input_text', text: [
+async function interpretCorrection({ message, batch, categories, runStructured = runCodex }) {
+  const prompt = [
     'Interpretá una corrección para un lote de movimientos. Devolvé solo el esquema JSON.',
     'index es el número de fila (1 en adelante). Si dice ignorá una fila, action=ignore.',
     'Si dice poné una fila en otra categoría, action=category. Si dice recordá que un destinatario pertenece a una categoría, action=remember.',
@@ -129,8 +170,8 @@ async function interpretCorrection({ apiKey, message, batch, categories }) {
     'Categorías: ' + JSON.stringify(categories.map((item) => ({ id: item.id, name: item.name, kind: item.kind }))),
     'Filas: ' + JSON.stringify(batch.rows.map((row, index) => ({ index: index + 1, title: row.title, amount: row.amount, categoryId: row.categoryId, include: row.include }))),
     'Instrucción: ' + message
-  ].join('\n') }];
-  return structuredResponse(apiKey, 'misgastos_correccion', correctionSchema, content);
+  ].join('\n');
+  return runStructured(correctionSchema, prompt);
 }
 
-module.exports = { extractBatch, interpretCorrection, keyOf, validDate };
+module.exports = { extractBatch, interpretCorrection, runCodex, keyOf, validDate };
