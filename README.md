@@ -88,6 +88,7 @@ Los cargos en USD y las filas que parezcan de tarjeta de crédito quedan fuera d
 
 - Base de datos: `%APPDATA%\MisGastos\misgastos.sqlite`.
 - Copias automáticas: `%APPDATA%\MisGastos\backups\`.
+- Diagnóstico: `%APPDATA%\MisGastos\logs\`, también accesible desde **Abrir registros** en el icono de la bandeja. Se guarda un archivo por día con arranques, cierres y errores. La app conserva siete días y limita cada archivo a 1 MB. Un aviso de cierre no registrado indica que la sesión anterior terminó sin pasar por el cierre normal; por sí solo no confirma un crash.
 - Exportación y restauración: **Ajustes > Copias de seguridad**.
 
 La base de datos, las copias y los dispositivos vinculados permanecen en tu PC. No están incluidos en este repositorio ni en el instalador. Si cambiás de PC, exportá una copia JSON desde Ajustes y restaurala en la nueva instalación.

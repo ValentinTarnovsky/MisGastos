@@ -5,6 +5,7 @@ const { openStore } = require('./store.cjs');
 const { startServer, PORT } = require('./server.cjs');
 const { createDiscordConfig } = require('./discord-config.cjs');
 const { createDiscordBot } = require('./discord-bot.cjs');
+const { createDiagnosticLog } = require('./diagnostic-log.cjs');
 
 app.setName('MisGastos');
 app.setAppUserModelId('ar.misgastos.app');
@@ -17,7 +18,20 @@ let server = null;
 let store = null;
 let discordBot = null;
 let quitting = false;
+let shutdownReason = 'app_quit';
+let diagnosticLog = null;
 const root = path.resolve(__dirname, '..');
+
+function captureErrors(log) {
+  const originalError = console.error.bind(console);
+  console.error = (...args) => {
+    originalError(...args);
+    const message = args.map((arg) => arg instanceof Error ? (arg.stack || arg.message) : String(arg)).join(' ').slice(0, 5000);
+    log.write('error', 'console_error', { message });
+  };
+  process.on('uncaughtExceptionMonitor', (error, origin) => log.write('error', 'uncaught_exception', { origin, name: error.name, message: error.message, stack: String(error.stack || '').slice(0, 4000) }));
+  process.on('unhandledRejection', (reason) => log.error('unhandled_rejection', reason));
+}
 
 function showWindow(openQr = false) {
   if (!mainWindow) return;
@@ -48,8 +62,9 @@ function trayMenu() {
     { label: 'Conectar iPhone', click: () => showWindow(true) },
     { type: 'separator' },
     { label: 'Iniciar con Windows', type: 'checkbox', checked: Boolean(auto), enabled: app.isPackaged && process.platform === 'win32', click: (item) => { loginSettings(item.checked); trayMenu(); } },
+    { label: 'Abrir registros', click: () => { if (diagnosticLog) shell.openPath(diagnosticLog.directory).catch((error) => console.error('No se pudieron abrir los registros:', error)); } },
     { type: 'separator' },
-    { label: 'Salir', click: () => { quitting = true; app.quit(); } }
+    { label: 'Salir', click: () => { shutdownReason = 'tray_exit'; quitting = true; app.quit(); } }
   ]));
 }
 
@@ -69,25 +84,35 @@ function createWindow() {
   });
   mainWindow.loadURL('http://127.0.0.1:' + PORT + '/');
   mainWindow.once('ready-to-show', () => { if (!process.argv.includes('--hidden')) mainWindow.show(); });
-  mainWindow.on('close', (event) => { if (!quitting) { event.preventDefault(); mainWindow.hide(); } });
+  mainWindow.on('close', (event) => { if (!quitting) { event.preventDefault(); mainWindow.hide(); diagnosticLog?.write('info', 'window_hidden_to_tray'); } });
+  mainWindow.webContents.on('render-process-gone', (_event, details) => diagnosticLog?.write('error', 'renderer_process_gone', { reason: details.reason, exitCode: details.exitCode }));
   mainWindow.webContents.setWindowOpenHandler(({ url }) => { if (/^https:\/\//.test(url)) shell.openExternal(url); return { action: 'deny' }; });
   mainWindow.webContents.session.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));
 }
 
 app.on('second-instance', () => showWindow());
 app.on('window-all-closed', () => {});
+app.on('child-process-gone', (_event, details) => {
+  if (details.reason !== 'clean-exit') diagnosticLog?.write('error', 'child_process_gone', { type: details.type, reason: details.reason, exitCode: details.exitCode });
+});
 
-app.whenReady().then(async () => {
+if (singleInstance) app.whenReady().then(async () => {
   try {
     const userData = app.getPath('userData');
+    diagnosticLog = createDiagnosticLog(userData);
+    diagnosticLog.start(app.getVersion());
+    captureErrors(diagnosticLog);
     store = await openStore(userData, path.join(root, 'initial-state.json'));
     const discordConfig = createDiscordConfig(userData, safeStorage);
-    discordBot = createDiscordBot(store, discordConfig);
+    discordBot = createDiscordBot(store, discordConfig, (status, detail) => {
+      diagnosticLog.write(status === 'error' ? 'error' : 'info', 'discord_status', { status, detail });
+    });
     const started = await startServer(store, root, () => {
       showWindow();
       if (mainWindow) mainWindow.webContents.executeJavaScript('window.MISGASTOS_PENDING && window.MISGASTOS_PENDING()').catch(() => {});
     }, discordBot, discordConfig);
     server = started.server;
+    server.on('error', (error) => diagnosticLog.error('http_server_error', error));
     createWindow();
     const icon = nativeImage.createFromPath(path.join(root, 'assets', 'misgastos-logo.png')).resize({ width: 20, height: 20 });
     tray = new Tray(icon);
@@ -97,11 +122,22 @@ app.whenReady().then(async () => {
     discordBot.start().catch((error) => console.error('No se pudo iniciar Discord:', error));
     setupLogin();
     trayMenu();
+    diagnosticLog.write('info', 'app_ready', { port: PORT });
   } catch (error) {
+    shutdownReason = 'startup_error';
     console.error('No se pudo iniciar MisGastos:', error);
     dialog.showErrorBox('MisGastos no pudo iniciarse', error.message + '\n\nSi el puerto 4174 está ocupado, cerrá la otra instancia.');
     app.quit();
   }
 });
 
-app.on('before-quit', () => { quitting = true; if (discordBot) discordBot.stop(); if (server) server.close(); if (store) store.close(); });
+app.on('before-quit', () => {
+  quitting = true;
+  try {
+    if (discordBot) discordBot.stop();
+    if (server) server.close();
+    if (store) store.close();
+  } finally {
+    diagnosticLog?.stop(shutdownReason);
+  }
+});

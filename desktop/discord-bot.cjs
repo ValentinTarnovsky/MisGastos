@@ -48,7 +48,7 @@ async function downloadImage(attachment) {
   return { bytes: Buffer.concat(chunks), mime };
 }
 
-function createDiscordBot(store, config) {
+function createDiscordBot(store, config, onStatus = () => {}) {
   let client = null;
   let status = 'desconectado';
   let detail = '';
@@ -56,7 +56,11 @@ function createDiscordBot(store, config) {
   let processing = Promise.resolve();
 
   function info() { return config.publicSettings(status, detail); }
-  function setStatus(next, message = '') { status = next; detail = String(message).slice(0, 150); }
+  function setStatus(next, message = '') {
+    status = next;
+    detail = String(message).slice(0, 150);
+    try { onStatus(status, detail); } catch (_) { /* El diagnóstico no debe interrumpir Discord. */ }
+  }
 
   async function processMessage(message, credentials) {
     if (message.author.bot || message.channelId !== credentials.channelId || !message.guild) return;
