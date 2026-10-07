@@ -4,8 +4,9 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { openStore } = require('../desktop/store.cjs');
-const { extractBatch } = require('../desktop/discord-ai.cjs');
+const { extractBatch, interpretCorrections } = require('../desktop/discord-ai.cjs');
 const { isNewMovementMessage, isCorrectionMessage } = require('../desktop/discord-bot.cjs');
+const { applyCorrections } = require('../desktop/discord-corrections.cjs');
 const { createDiscordConfig } = require('../desktop/discord-config.cjs');
 
 const initialStatePath = path.join(__dirname, '..', 'initial-state.json');
@@ -55,6 +56,55 @@ test('An empty proposal cannot trap new expenses as corrections', () => {
   assert.equal(isCorrectionMessage('el 3 va en Comida', active), true);
   assert.equal(isNewMovementMessage('Fila 4'), false);
   assert.equal(isCorrectionMessage('a q te referis?', empty), false);
+  assert.equal(isCorrectionMessage('1 Ropa y nombre Costurera, 2 Comida, ignorá 3', active), true);
+});
+
+test('one Discord message can rename, recategorize and ignore several rows together', async () => {
+  const categories = [
+    { id: 'food', name: 'Comida', kind: 'expense' },
+    { id: 'clothes', name: 'Ropa', kind: 'expense' },
+    { id: 'other-income', name: 'Otros ingresos', kind: 'income' }
+  ];
+  const rows = [
+    { title: 'Eliana Perez', kind: 'expense', amount: 30000, currency: 'ARS', date: '2026-10-06', categoryId: null, include: false, reason: 'Persona sin regla' },
+    { title: 'Abraham Yucra', kind: 'expense', amount: 2000, currency: 'ARS', date: '2026-10-06', categoryId: null, include: false, reason: 'Persona sin regla' },
+    { title: 'Diego Sole', kind: 'income', amount: 35000, currency: 'ARS', date: '2026-10-06', categoryId: null, include: false, reason: 'Origen incierto' },
+    { title: 'Avica', kind: 'expense', amount: 24876, currency: 'ARS', date: '2026-10-06', categoryId: null, include: false, reason: 'Categoría incierta' }
+  ];
+  const message = '1 Ropa y que sea Costurera, 2 verdulería, 3 ingreso extra ponele Trabajo Pintura, ignorá 4';
+  const edits = await interpretCorrections({ message, batch: { rows }, categories, runStructured: async (schema, prompt) => {
+    assert.ok(schema.properties.edits);
+    assert.match(prompt, /TODAS las correcciones/);
+    assert.match(prompt, /Trabajo Pintura/);
+    return { edits: [
+      { action: 'update', index: 1, categoryId: 'clothes', title: 'Costurera', merchant: null, remember: false },
+      { action: 'update', index: 2, categoryId: 'food', title: 'Verdulería', merchant: null, remember: false },
+      { action: 'update', index: 3, categoryId: 'other-income', title: 'Trabajo Pintura', merchant: null, remember: false },
+      { action: 'ignore', index: 4, categoryId: null, title: null, merchant: null, remember: false }
+    ] };
+  } });
+  const result = applyCorrections({ message, rows, categories, edits });
+  assert.deepEqual(result.changed, [1, 2, 3, 4]);
+  assert.deepEqual(result.rows.map((row) => [row.title, row.categoryId, row.include]), [
+    ['Costurera', 'clothes', true], ['Verdulería', 'food', true], ['Trabajo Pintura', 'other-income', true], ['Avica', null, false]
+  ]);
+  assert.deepEqual(result.rules, [
+    { merchant: 'Eliana Perez', categoryId: 'clothes' }, { merchant: 'Abraham Yucra', categoryId: 'food' }
+  ]);
+  assert.equal(rows[0].title, 'Eliana Perez');
+});
+
+test('a partial multi-row correction does not change any row', () => {
+  const rows = [
+    { title: 'A', kind: 'expense', currency: 'ARS', categoryId: null, include: false },
+    { title: 'B', kind: 'expense', currency: 'ARS', categoryId: null, include: false }
+  ];
+  assert.throws(() => applyCorrections({
+    message: '1 ropa 2 comida', rows, categories: [
+      { id: 'clothes', name: 'Ropa', kind: 'expense' }, { id: 'food', name: 'Comida', kind: 'expense' }
+    ], edits: [{ action: 'update', index: 1, categoryId: 'clothes', title: null, merchant: null, remember: false }]
+  }), /fila 2/);
+  assert.equal(rows[0].categoryId, null);
 });
 
 test('A card installment is excluded from screenshots but accepted as an explicit manual expense', async () => {

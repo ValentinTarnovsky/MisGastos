@@ -155,27 +155,41 @@ async function extractBatch({ images, caption, categories, rules, existing, toda
 const correctionSchema = {
   type: 'object', additionalProperties: false,
   properties: {
-    action: { type: 'string', enum: ['ignore', 'include', 'category', 'remember', 'unknown'] },
-    index: { type: 'integer' }, categoryId: { type: ['string', 'null'] },
-    merchant: { type: ['string', 'null'] }, remember: { type: 'boolean' }
+    edits: {
+      type: 'array', items: {
+        type: 'object', additionalProperties: false,
+        properties: {
+          action: { type: 'string', enum: ['update', 'ignore', 'include', 'remember'] },
+          index: { type: 'integer' }, categoryId: { type: ['string', 'null'] },
+          title: { type: ['string', 'null'] }, merchant: { type: ['string', 'null'] },
+          remember: { type: 'boolean' }
+        },
+        required: ['action', 'index', 'categoryId', 'title', 'merchant', 'remember']
+      }
+    }
   },
-  required: ['action', 'index', 'categoryId', 'merchant', 'remember']
+  required: ['edits']
 };
 
-async function interpretCorrection({ message, batch, categories, runStructured = runCodex }) {
+async function interpretCorrections({ message, batch, categories, runStructured = runCodex }) {
   const prompt = [
-    'Interpretá una corrección para un lote de movimientos. Devolvé solo el esquema JSON.',
-    'index es el número de fila (1 en adelante). Si dice ignorá una fila, action=ignore.',
-    'Si dice poné una fila en otra categoría, action=category. Si dice recordá que un destinatario pertenece a una categoría, action=remember.',
-    'Una regla puede crearse sin filas pendientes. En ese caso usá index=0, merchant con el nombre del comercio y la categoría existente más adecuada; por ejemplo, un verdulero corresponde a Comida.',
-    'Solo usá categoryId de la lista. Cuando no puedas identificar fila o categoría, action=unknown.',
-    'Para recordar una regla, merchant debe ser el nombre exacto del destinatario o comercio y remember=true.',
-    'Si la instrucción cambia una fila y quiere que se recuerde para el futuro, action=category y remember=true.',
+    'Interpretá TODAS las correcciones del mensaje para un lote de movimientos. Devolvé una edición por cada fila mencionada, incluso si el usuario escribe varias instrucciones breves como "1 ropa 2 verdulería 3 ingreso extra ponele Trabajo Pintura". No te quedes solo con la primera.',
+    'index es el número de fila (1 en adelante). action=update puede cambiar categoría y título juntos. categoryId=null o title=null significa conservar ese campo.',
+    'Si dice "ponerle de nombre", "que sea" o "llamalo", poné el nuevo título exacto en title. No mantengas el nombre de la persona cuando pide reemplazarlo por un concepto.',
+    'Si nombra una categoría existente, elegí su categoryId y dejá title=null salvo que pida cambiar el nombre. "1 ropa" solo cambia categoría a Ropa.',
+    'Si usa un concepto que no es categoría existente, como "verdulería" o "costurera", elegí una categoría existente apropiada para el tipo de fila y usá ese concepto como título. Verdulería va en Comida; costurera va en Ropa si existen.',
+    '"Ingreso extra" corresponde a una categoría de ingreso como Otros ingresos, nunca a una categoría de gasto llamada Extras. Si agrega "ponele Trabajo Pintura", title="Trabajo Pintura".',
+    'Si pide ignorar una fila, action=ignore. Si pide incluir una fila sin cambiarla, action=include.',
+    'Una regla se puede recordar sin filas pendientes: action=remember, index=0, merchant con el nombre exacto del comercio o destinatario y categoryId de una categoría de gasto.',
+    'Para cambios de filas, merchant=null normalmente; remember=true solo si pide expresamente recordar para el futuro. No inventes filas ni categorías. Si algo es ambiguo, omití esa edición.',
+    'Devolvé edits=[] cuando no haya ninguna corrección identificable.',
     'Categorías: ' + JSON.stringify(categories.map((item) => ({ id: item.id, name: item.name, kind: item.kind }))),
-    'Filas: ' + JSON.stringify(batch.rows.map((row, index) => ({ index: index + 1, title: row.title, amount: row.amount, categoryId: row.categoryId, include: row.include }))),
+    'Filas: ' + JSON.stringify(batch.rows.map((row, index) => ({ index: index + 1, title: row.title, kind: row.kind, amount: row.amount, categoryId: row.categoryId, include: row.include }))),
     'Instrucción: ' + message
   ].join('\n');
-  return runStructured(correctionSchema, prompt);
+  const result = await runStructured(correctionSchema, prompt);
+  if (!Array.isArray(result.edits) || result.edits.length > 30) throw new Error('No pude interpretar todas las correcciones');
+  return result.edits;
 }
 
-module.exports = { extractBatch, interpretCorrection, runCodex, keyOf, validDate };
+module.exports = { extractBatch, interpretCorrections, runCodex, keyOf, validDate };

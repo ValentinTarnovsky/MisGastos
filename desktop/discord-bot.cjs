@@ -1,5 +1,6 @@
 const { Client, Events, GatewayIntentBits } = require('discord.js');
-const { extractBatch, interpretCorrection } = require('./discord-ai.cjs');
+const { extractBatch, interpretCorrections } = require('./discord-ai.cjs');
+const { applyCorrections } = require('./discord-corrections.cjs');
 
 function formatAmount(amount) { return '$' + Number(amount).toLocaleString('es-AR'); }
 
@@ -15,7 +16,11 @@ function isNewMovementMessage(input) {
   return /(?:\$|\bARS\b|\bUSD\b)\s*\d|\b\d{2,}(?:[.,]\d+)*\b/i.test(input) || /^(?:nuevo\s+(?:gasto|ingreso|movimiento)|(?:tambi[eé]n\s+)?(?:cre[aá]|agreg[aá]|registr[aá]|carg[aá])\b)/i.test(input);
 }
 
-function isCorrectionMessage(input, pending) { return Boolean(pending?.rows.length) && !isNewMovementMessage(input); }
+function isCorrectionMessage(input, pending) {
+  if (!pending?.rows.length) return false;
+  if (/^\s*(?:(?:fila|el|la)\s+)?\d{1,2}\s+[a-záéíóú]/i.test(input)) return true;
+  return !isNewMovementMessage(input);
+}
 
 function preview(batch, categories) {
   const names = new Map(categories.map((item) => [item.id, item.name]));
@@ -27,7 +32,7 @@ function preview(batch, categories) {
   });
   const ready = batch.rows.filter((row) => row.include).length;
   return ['**Propuesta de MisGastos**', ...(lines.length ? lines : ['No encontré movimientos legibles. Probá otra captura o escribilos en un mensaje.']), '',
-    ready ? `Escribí **guardar** para cargar ${ready} movimiento${ready === 1 ? '' : 's'}. También podés decir "ignora el 2" o "el 3 va en Comida".` : 'No hay movimientos listos para guardar. Podés corregir una fila o cancelar.'].join('\n').slice(0, 1900);
+    ready ? `Escribí **guardar** para cargar ${ready} movimiento${ready === 1 ? '' : 's'}. Podés corregir varias filas juntas: "1 Ropa y nombre Costurera, 2 Comida, ignorá 3".` : 'No hay movimientos listos para guardar. Podés corregir una o varias filas, o cancelar.'].join('\n').slice(0, 1900);
 }
 
 async function downloadImage(attachment) {
@@ -79,15 +84,14 @@ function createDiscordBot(store, config, onStatus = () => {}) {
       if (!pending && !attachments.length && /^(guardar|confirmar|listo|sí|si|cancelar|descartar|olvidar)$/i.test(input)) {
         await message.reply({ content: 'No hay una propuesta pendiente. Mandá una captura o un gasto primero.', allowedMentions: { parse: [] } });
       } else if (!attachments.length && /^(?:ayuda|a\s+q(?:u[eé])?\s+te\s+refer[ií]s|qu[eé]\s+quer[eé]s\s+decir)\??$/i.test(input)) {
-        await message.reply({ content: 'Primero te muestro una propuesta; no guardo nada hasta que escribas **guardar**. Podés mandar una captura o un gasto como `Cuotas Mercado Pago $53.349 en Credito`. Para cambiar una fila de la propuesta, decime su número. Escribí **cancelar** para descartarla.', allowedMentions: { parse: [] } });
+        await message.reply({ content: 'Primero te muestro una propuesta; no guardo nada hasta que escribas **guardar**. Podés mandar una captura o un gasto como `Cuotas Mercado Pago $53.349 en Credito`. Para corregir varias filas, decime por ejemplo `1 Ropa y nombre Costurera, 2 Comida, ignorá 3`. Escribí **cancelar** para descartarla.', allowedMentions: { parse: [] } });
       } else if (!pending && !attachments.length && /^(record[aá]|aprend[eé]|acordate)/i.test(input)) {
         const categories = store.getState().data.categories;
-        const correction = await interpretCorrection({ message: input, batch: { rows: [] }, categories });
-        const category = categories.find((item) => item.id === correction.categoryId && item.kind === 'expense');
-        const merchant = String(correction.merchant || '').trim();
-        if (!category || !merchant) throw new Error('Decime el comercio y una categoría existente, por ejemplo: "recordá que Pepito Miguel va en Comida"');
-        store.setMerchantRule(merchant, category.id);
-        await message.reply({ content: `Aprendí que ${merchant} va en ${category.name}.`, allowedMentions: { parse: [] } });
+        const edits = await interpretCorrections({ message: input, batch: { rows: [] }, categories });
+        const result = applyCorrections({ message: input, rows: [], categories, edits });
+        if (!result.rules.length) throw new Error('Decime el comercio y una categoría existente, por ejemplo: "recordá que Pepito Miguel va en Comida"');
+        for (const rule of result.rules) store.setMerchantRule(rule.merchant, rule.categoryId);
+        await message.reply({ content: result.rules.map((rule) => `Aprendí que ${rule.merchant} va en ${categories.find((item) => item.id === rule.categoryId).name}.`).join('\n').slice(0, 1900), allowedMentions: { parse: [] } });
       } else if (pending && !attachments.length && /^(guardar|confirmar|listo|sí|si)$/i.test(input)) {
         const count = store.commitBatch(pending.id);
         await message.reply({ content: count ? `Listo. Guardé ${count} movimiento${count === 1 ? '' : 's'} en MisGastos.` : 'No había movimientos listos para guardar.', allowedMentions: { parse: [] } });
@@ -96,43 +100,13 @@ function createDiscordBot(store, config, onStatus = () => {}) {
         await message.reply({ content: 'Descarté la propuesta. No cargué movimientos.', allowedMentions: { parse: [] } });
       } else if (!attachments.length && isCorrectionMessage(input, pending)) {
         const categories = store.getState().data.categories;
-        const correction = await interpretCorrection({ message: input, batch: pending, categories });
-        const index = correction.index - 1;
-        const row = pending.rows[index];
-        const category = categories.find((item) => item.id === correction.categoryId);
-        if (correction.action === 'unknown' || (correction.action !== 'remember' && !row)) {
-          await message.reply({ content: 'No pude identificar cuál fila cambiar. Decime el número, por ejemplo: "ignora el 2".', allowedMentions: { parse: [] } });
-        } else if (correction.action === 'ignore') {
-          row.include = false;
-          row.reason = 'Ignorado por indicación tuya';
-          store.updateBatch(pending.id, pending.rows);
-          await message.reply({ content: preview(pending, categories), allowedMentions: { parse: [] } });
-        } else if (correction.action === 'include') {
-          if (row.currency !== 'ARS' || !categories.some((item) => item.id === row.categoryId && item.kind === row.kind)) throw new Error('Primero indicá una categoría válida en ARS para esa fila');
-          row.include = true;
-          row.reason = '';
-          store.updateBatch(pending.id, pending.rows);
-          await message.reply({ content: preview(pending, categories), allowedMentions: { parse: [] } });
-        } else if (!category || (row && category.kind !== row.kind)) {
-          await message.reply({ content: 'No encontré esa categoría para el tipo de movimiento. Decime una de tus categorías existentes.', allowedMentions: { parse: [] } });
-        } else {
-          const merchant = String(correction.merchant || row?.title || '').trim();
-          const learn = correction.remember || correction.action === 'remember' || (correction.action === 'category' && row?.kind === 'expense' && !/solo esta vez/i.test(input));
-          if (learn) {
-            if (category.kind !== 'expense' || !merchant) throw new Error('La regla necesita un comercio y una categoría de gasto');
-            store.setMerchantRule(merchant, category.id);
-          }
-          if (row) {
-            row.categoryId = category.id;
-            const heldForCard = /tarjeta|cuota|usd|d[oó]lar/i.test(row.reason || '') || row.currency !== 'ARS';
-            row.include = !heldForCard;
-            row.reason = row.include ? '' : (row.reason || 'Gasto para cargar por separado');
-            store.updateBatch(pending.id, pending.rows);
-            await message.reply({ content: preview(pending, categories) + (learn ? '\nAprendí esta categoría para las próximas veces.' : ''), allowedMentions: { parse: [] } });
-          } else {
-            await message.reply({ content: `Aprendí que ${merchant} va en ${category.name}.`, allowedMentions: { parse: [] } });
-          }
-        }
+        const edits = await interpretCorrections({ message: input, batch: pending, categories });
+        const result = applyCorrections({ message: input, rows: pending.rows, categories, edits });
+        if (result.changed.length) store.updateBatch(pending.id, result.rows);
+        for (const rule of result.rules) store.setMerchantRule(rule.merchant, rule.categoryId);
+        const summary = result.changed.length ? `Actualicé ${result.changed.length === 1 ? 'la fila' : 'las filas'} ${result.changed.join(', ')}.\n` : '';
+        const learned = result.rules.length ? '\nAprendí ' + result.rules.length + (result.rules.length === 1 ? ' categoría para próximas veces.' : ' categorías para próximas veces.') : '';
+        await message.reply({ content: (summary + preview({ ...pending, rows: result.rows }, categories) + learned).slice(0, 1900), allowedMentions: { parse: [] } });
       } else if (attachments.length || isNewMovementMessage(input)) {
         const images = await Promise.all(attachments.map(downloadImage));
         const state = store.getState().data;

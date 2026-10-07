@@ -11,7 +11,7 @@ MisGastos es una aplicación de escritorio para Windows. Guarda los datos en SQL
 ## Qué podés hacer
 
 - Registrar ingresos y gastos en pesos argentinos, con saldo inicial y categorías propias.
-- Editar, borrar, recategorizar y buscar movimientos.
+- Editar, borrar, recategorizar y buscar movimientos. Inicio y Movimientos muestran primero los cargados más recientemente, aunque su fecha de gasto sea anterior o futura.
 - Reutilizar descripciones con sugerencias basadas en compras anteriores de la misma categoría. Un campo de detalle opcional distingue cada compra.
 - Ver gráficos por mes, resumen anual y análisis de cada categoría por comercio o concepto. Los nombres duplicados se pueden unir.
 - Registrar ahorros en ARS o USD. Para compras de dólares, anotás también el importe pagado en ARS.
@@ -78,7 +78,7 @@ El QR vence a los cinco minutos. Los celulares vinculados aparecen en **Ajustes*
 2. Invitá el bot a un servidor privado con permisos para ver el canal elegido, leer el historial y enviar mensajes. Copiá el ID de ese canal desde Discord con el modo desarrollador activado.
 3. Instalá [Codex CLI](https://learn.chatgpt.com/docs/codex/cli) en la PC y ejecutá `codex login` con tu cuenta de ChatGPT. Comprobá con `codex login status` que diga `Logged in using ChatGPT`.
 4. En la app de Windows, abrí **Ajustes > Discord > Configurar bot** y pegá el token del bot y el ID del canal. Activá el bot y guardá.
-5. Mandá una captura o un texto como `560 en Starbucks`. El bot te devuelve una lista. Escribí `ignora el 2`, `el 3 va en Comida` o `recordá que Pepito Miguel es verdulero` para corregirla. Para cargar un pago único de tarjeta que quedó excluido de una captura, escribí por ejemplo `Cuotas Mercado Pago $53.349 en Credito`. Escribí `guardar` para registrar las filas marcadas.
+5. Mandá una captura o un texto como `560 en Starbucks`. El bot te devuelve una lista. Podés corregir varias filas juntas, por ejemplo `1 Ropa y nombre Costurera, 2 verdulería, 3 Otros ingresos y nombre Trabajo Pintura, ignorá 4`. También podés escribir `recordá que Pepito Miguel es verdulero` para enseñar una categoría. Para cargar un pago único de tarjeta que quedó excluido de una captura, escribí por ejemplo `Cuotas Mercado Pago $53.349 en Credito`. Escribí `guardar` para registrar las filas marcadas.
 
 Solo el dueño del servidor puede darle instrucciones al bot, y solo en el canal configurado. La PC tiene que estar encendida y MisGastos activo en segundo plano. Al reconectarse, el bot revisa los 100 mensajes más recientes del canal. Las capturas enviadas se procesan con GPT-6 Luna en Fast mode mediante Codex CLI y consumen el límite de uso de tu plan ChatGPT. No se necesita ni se usa una clave de OpenAI API. Fast mode consume más cuota que el modo estándar. El token de Discord se cifra localmente en Windows y no se exporta. Las reglas aprendidas sí se guardan en SQLite y en las copias JSON.
 

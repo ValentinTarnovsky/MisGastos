@@ -259,12 +259,14 @@ function matchingConcepts(categoryId, query) {
 function sortedTransactions() {
   return data.transactions.map(function (item, index) {
     const time = /^Hora:\s*([01]\d|2[0-3]):([0-5]\d)(?:\s|$)/.exec(item.note || '');
-    return { item: item, index: index, time: time ? Number(time[1]) * 60 + Number(time[2]) : 1440 + index / 100000 };
+    return { item: item, index: index, time: time ? Number(time[1]) * 60 + Number(time[2]) : -1 };
   })
     .sort(function (a, b) {
-      return b.item.date.localeCompare(a.item.date) ||
-        (b.item.createdAt || '').localeCompare(a.item.createdAt || '') ||
-        b.time - a.time || b.index - a.index;
+      const aRegistered = Boolean(a.item.createdAt);
+      const bRegistered = Boolean(b.item.createdAt);
+      return Number(bRegistered) - Number(aRegistered) ||
+        (aRegistered ? b.item.createdAt.localeCompare(a.item.createdAt) : 0) ||
+        b.item.date.localeCompare(a.item.date) || b.time - a.time || a.index - b.index;
     })
     .map(function (entry) { return entry.item; });
 }
