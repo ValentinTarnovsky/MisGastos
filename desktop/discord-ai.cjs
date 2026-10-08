@@ -2,9 +2,10 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
+const categoryIcons = require('../category-icons.js');
 
-const MODEL = 'gpt-6-luna';
-const CODEX_TIMEOUT_MS = 180000;
+const MODEL = 'claude-haiku-5-5';
+const CLAUDE_TIMEOUT_MS = 180000;
 
 function keyOf(value) {
   return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('es-AR').replace(/[^a-z0-9]+/g, ' ').trim();
@@ -16,63 +17,57 @@ function validDate(value) {
   return !Number.isNaN(date.valueOf()) && date.toISOString().slice(0, 10) === value;
 }
 
-function codexExecutable() {
-  const installed = process.env.LOCALAPPDATA && path.join(process.env.LOCALAPPDATA, 'Programs', 'OpenAI', 'Codex', 'bin', 'codex.exe');
-  return installed && fs.existsSync(installed) ? installed : 'codex';
+function claudeExecutable() {
+  const installed = path.join(os.homedir(), '.local', 'bin', process.platform === 'win32' ? 'claude.exe' : 'claude');
+  return fs.existsSync(installed) ? installed : 'claude';
 }
 
-async function runCodex(schema, prompt, images = []) {
-  const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'misgastos-codex-'));
-  const schemaPath = path.join(folder, 'schema.json');
-  const outputPath = path.join(folder, 'result.json');
+async function runClaude(schema, prompt, images = []) {
+  const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'misgastos-claude-'));
   try {
-    fs.writeFileSync(schemaPath, JSON.stringify(schema), 'utf8');
-    const imagePaths = images.map((image, index) => {
-      const extension = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp' }[image.mime];
-      if (!extension || !Buffer.isBuffer(image.bytes)) throw new Error('Formato de captura no válido');
-      const imagePath = path.join(folder, 'capture-' + index + '.' + extension);
-      fs.writeFileSync(imagePath, image.bytes);
-      return imagePath;
+    const content = images.map((image) => {
+      if (!['image/png', 'image/jpeg', 'image/webp'].includes(image.mime) || !Buffer.isBuffer(image.bytes)) throw new Error('Formato de captura no válido');
+      return { type: 'image', source: { type: 'base64', media_type: image.mime, data: image.bytes.toString('base64') } };
     });
+    content.push({ type: 'text', text: prompt });
     const args = [
-      'exec', '--ephemeral', '--ignore-user-config', '--ignore-rules', '--skip-git-repo-check',
-      '--disable', 'shell_tool', '--disable', 'apps', '--disable', 'hooks', '--disable', 'multi_agent',
-      '--sandbox', 'read-only', '-C', folder, '-m', MODEL,
-      '-c', 'model_reasoning_effort="low"', '-c', 'service_tier="fast"',
-      '--output-schema', schemaPath, '-o', outputPath, '--color', 'never'
+      '-p', '--model', MODEL, '--effort', 'low', '--tools', '', '--permission-mode', 'dontAsk',
+      '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose',
+      '--json-schema', JSON.stringify(schema)
     ];
-    if (imagePaths.length) args.push('--image', ...imagePaths);
-    args.push('-');
     const environment = { ...process.env };
+    delete environment.CLAUDECODE;
     delete environment.OPENAI_API_KEY;
     delete environment.CODEX_API_KEY;
-    await new Promise((resolve, reject) => {
-      const child = spawn(codexExecutable(), args, { cwd: folder, env: environment, windowsHide: true, shell: false, stdio: ['pipe', 'ignore', 'pipe'] });
+    delete environment.ANTHROPIC_API_KEY;
+    return await new Promise((resolve, reject) => {
+      const child = spawn(claudeExecutable(), args, { cwd: folder, env: environment, windowsHide: true, shell: false, stdio: ['pipe', 'pipe', 'pipe'] });
       let settled = false;
       let timedOut = false;
       let errorOutput = '';
-      const finish = (error) => {
+      let output = '';
+      const finish = (error, value) => {
         if (settled) return;
         settled = true;
         clearTimeout(timeout);
-        if (error) reject(error); else resolve();
+        if (error) reject(error); else resolve(value);
       };
-      const timeout = setTimeout(() => { timedOut = true; child.kill(); }, CODEX_TIMEOUT_MS);
+      const timeout = setTimeout(() => { timedOut = true; child.kill(); }, CLAUDE_TIMEOUT_MS);
+      child.stdout.on('data', (chunk) => { output += chunk.toString(); if (output.length > 2_000_000) child.kill(); });
       child.stderr.on('data', (chunk) => { errorOutput = (errorOutput + chunk.toString()).slice(-4000); });
-      child.on('error', () => finish(new Error('No encuentro Codex CLI en esta PC. Instalalo e iniciá sesión con ChatGPT.')));
+      child.on('error', () => finish(new Error('No encuentro Claude Code CLI en esta PC. Instalalo e iniciá sesión con tu cuenta de Claude.')));
       child.on('close', (code) => {
-        if (timedOut) finish(new Error('Codex CLI tardó demasiado. Probá de nuevo.'));
-        else if (code === 0) finish();
-        else {
-          const loginProblem = /not logged in|authentication|unauthorized|login required/i.test(errorOutput);
-          finish(new Error(loginProblem ? 'Iniciá sesión en Codex CLI con tu cuenta de ChatGPT.' : 'Codex CLI no pudo analizar el mensaje. Revisá tu conexión o el límite de uso e intentá de nuevo.'));
-        }
+        if (timedOut) return finish(new Error('Claude Code tardó demasiado. Probá de nuevo.'));
+        if (code !== 0) return finish(new Error(/not logged in|authentication|unauthorized|login required/i.test(errorOutput) ? 'Iniciá sesión en Claude Code CLI.' : 'Claude Code no pudo analizar el mensaje. Revisá la conexión o tu límite de uso.'));
+        try {
+          const result = output.trim().split(/\r?\n/).map((line) => JSON.parse(line)).findLast((entry) => entry.type === 'result');
+          if (!result || result.is_error || !result.structured_output) throw new Error('Claude Code no devolvió una respuesta utilizable');
+          finish(null, result.structured_output);
+        } catch (error) { finish(error); }
       });
       child.stdin.on('error', () => {});
-      child.stdin.end(prompt);
+      child.stdin.end(JSON.stringify({ type: 'user', message: { role: 'user', content } }) + '\n');
     });
-    if (!fs.existsSync(outputPath)) throw new Error('Codex CLI no devolvió una respuesta utilizable');
-    return JSON.parse(fs.readFileSync(outputPath, 'utf8'));
   } finally {
     fs.rmSync(folder, { recursive: true, force: true });
   }
@@ -95,7 +90,7 @@ const extractionSchema = {
   properties: { rows: { type: 'array', items: rowSchema } }, required: ['rows']
 };
 
-async function extractBatch({ images, caption, categories, rules, existing, today, referenceRows = [], runStructured = runCodex }) {
+async function extractBatch({ images, caption, categories, rules, existing, today, referenceRows = [], runStructured = runClaude }) {
   const categoryList = categories.map((item) => ({ id: item.id, name: item.name, kind: item.kind }));
   const instructions = [
     'Extraé movimientos financieros de las imágenes o del mensaje. Respondé solo según el esquema JSON.',
@@ -159,37 +154,53 @@ const correctionSchema = {
       type: 'array', items: {
         type: 'object', additionalProperties: false,
         properties: {
-          action: { type: 'string', enum: ['update', 'ignore', 'include', 'remember'] },
+          action: { type: 'string', enum: ['update', 'ignore', 'include', 'remember', 'create_category', 'split'] },
           index: { type: 'integer' }, categoryId: { type: ['string', 'null'] },
           title: { type: ['string', 'null'] }, merchant: { type: ['string', 'null'] },
-          remember: { type: 'boolean' }
+          remember: { type: 'boolean' }, categoryName: { type: ['string', 'null'] },
+          kind: { type: ['string', 'null'], enum: ['expense', 'income', null] },
+          icon: { type: ['string', 'null'] }, tone: { type: ['string', 'null'] },
+          parts: { type: 'array', items: {
+            type: 'object', additionalProperties: false,
+            properties: { amount: { type: ['number', 'null'] }, categoryId: { type: ['string', 'null'] }, categoryName: { type: ['string', 'null'] }, title: { type: ['string', 'null'] } },
+            required: ['amount', 'categoryId', 'categoryName', 'title']
+          } }
         },
-        required: ['action', 'index', 'categoryId', 'title', 'merchant', 'remember']
+        required: ['action', 'index', 'categoryId', 'title', 'merchant', 'remember', 'categoryName', 'kind', 'icon', 'tone', 'parts']
       }
-    }
+    },
+    clarification: { type: ['string', 'null'] }
   },
-  required: ['edits']
+  required: ['edits', 'clarification']
 };
 
-async function interpretCorrections({ message, batch, categories, runStructured = runCodex }) {
+async function interpretCorrections({ message, batch, categories, history = [], runStructured = runClaude }) {
   const prompt = [
-    'Interpretá TODAS las correcciones del mensaje para un lote de movimientos. Devolvé una edición por cada fila mencionada, incluso si el usuario escribe varias instrucciones breves como "1 ropa 2 verdulería 3 ingreso extra ponele Trabajo Pintura". No te quedes solo con la primera.',
-    'index es el número de fila (1 en adelante). action=update puede cambiar categoría y título juntos. categoryId=null o title=null significa conservar ese campo.',
+    'Sos el intérprete de instrucciones del dueño de MisGastos. Interpretá TODAS las acciones del mensaje actual sobre la propuesta pendiente, usando los mensajes recientes para resolver referencias como "ese", "el de arriba", "lo que te dije" o "dividilo". El mensaje actual tiene prioridad. No inventes una referencia si hay varias filas posibles: hacé una pregunta concreta en clarification y devolvé edits=[].',
+    'Devolvé una edición por cada fila mencionada, incluso si el usuario escribe varias instrucciones breves como "1 ropa 2 verdulería 3 ingreso extra ponele Trabajo Pintura". No te quedes solo con la primera.',
+    'Cada edición usa los campos indicados. Para campos no aplicables: null, false o parts=[]. index es el número de fila (1 en adelante), o 0 para create_category y remember.',
+    'action=update puede cambiar categoría y título juntos. categoryId=null y categoryName=null conservan la categoría; title=null conserva el título.',
     'Si dice "ponerle de nombre", "que sea" o "llamalo", poné el nuevo título exacto en title. No mantengas el nombre de la persona cuando pide reemplazarlo por un concepto.',
     'Si nombra una categoría existente, elegí su categoryId y dejá title=null salvo que pida cambiar el nombre. "1 ropa" solo cambia categoría a Ropa.',
     'Si usa un concepto que no es categoría existente, como "verdulería" o "costurera", elegí una categoría existente apropiada para el tipo de fila y usá ese concepto como título. Verdulería va en Comida; costurera va en Ropa si existen.',
     '"Ingreso extra" corresponde a una categoría de ingreso como Otros ingresos, nunca a una categoría de gasto llamada Extras. Si agrega "ponele Trabajo Pintura", title="Trabajo Pintura".',
+    'Si pide expresamente crear una categoría, action=create_category, index=0, categoryName con el nombre exacto, kind=expense o income, icon de la lista y tone entre lavender, coral, mint, sky, rose, peach. No crees categorías por inferencia cuando solo pide usar una categoría.',
+    'Si crea una categoría y también pide usarla en una fila, agregá otra edición update o split con categoryName igual al nombre nuevo. Para una categoría existente usá categoryId.',
+    'Si pide dividir una fila, action=split con 2 a 10 parts. Cada parte tiene amount en pesos enteros, categoryId o categoryName, y title opcional. Calculá los importes para que sumen exactamente el importe original. Si una parte es "el resto", usá amount=null solo en esa parte. Si no se puede determinar el reparto, preguntá en clarification y no hagas cambios.',
+    'No dividas un gasto si no hay una fila pendiente identificable. Todas las ediciones de fila se refieren a la numeración original del lote.',
     'Si pide ignorar una fila, action=ignore. Si pide incluir una fila sin cambiarla, action=include.',
     'Una regla se puede recordar sin filas pendientes: action=remember, index=0, merchant con el nombre exacto del comercio o destinatario y categoryId de una categoría de gasto.',
-    'Para cambios de filas, merchant=null normalmente; remember=true solo si pide expresamente recordar para el futuro. No inventes filas ni categorías. Si algo es ambiguo, omití esa edición.',
-    'Devolvé edits=[] cuando no haya ninguna corrección identificable.',
+    'Para cambios de filas, merchant=null normalmente; remember=true solo si pide expresamente recordar para el futuro. No inventes filas ni categorías.',
+    'Si hay una petición entendible, no respondas con edits=[] por tener lenguaje coloquial. Si de verdad falta una referencia o un importe necesario, usá clarification con una pregunta breve. Cuando no haya acción ni ambigüedad, devolvé edits=[] y clarification=null.',
+    'Íconos disponibles: ' + JSON.stringify(Object.entries(categoryIcons).map(([id, item]) => ({ id, label: item.label }))),
     'Categorías: ' + JSON.stringify(categories.map((item) => ({ id: item.id, name: item.name, kind: item.kind }))),
-    'Filas: ' + JSON.stringify(batch.rows.map((row, index) => ({ index: index + 1, title: row.title, kind: row.kind, amount: row.amount, categoryId: row.categoryId, include: row.include }))),
+    'Filas: ' + JSON.stringify(batch.rows.map((row, index) => ({ index: index + 1, title: row.title, kind: row.kind, amount: row.amount, currency: row.currency, categoryId: row.categoryId, include: row.include, reason: row.reason }))),
+    'Conversación reciente, en orden: ' + JSON.stringify(history),
     'Instrucción: ' + message
   ].join('\n');
   const result = await runStructured(correctionSchema, prompt);
   if (!Array.isArray(result.edits) || result.edits.length > 30) throw new Error('No pude interpretar todas las correcciones');
-  return result.edits;
+  return { edits: result.edits, clarification: typeof result.clarification === 'string' ? result.clarification.trim().slice(0, 180) : null };
 }
 
-module.exports = { extractBatch, interpretCorrections, runCodex, keyOf, validDate };
+module.exports = { extractBatch, interpretCorrections, runClaude, keyOf, validDate };

@@ -5,8 +5,8 @@ const os = require('node:os');
 const path = require('node:path');
 const { openStore } = require('../desktop/store.cjs');
 const { extractBatch, interpretCorrections } = require('../desktop/discord-ai.cjs');
-const { isNewMovementMessage, isCorrectionMessage } = require('../desktop/discord-bot.cjs');
-const { applyCorrections } = require('../desktop/discord-corrections.cjs');
+const { isNewMovementMessage, isCorrectionMessage, isCategoryRequest } = require('../desktop/discord-bot.cjs');
+const { applyCorrections, mentionedRows } = require('../desktop/discord-corrections.cjs');
 const { createDiscordConfig } = require('../desktop/discord-config.cjs');
 
 const initialStatePath = path.join(__dirname, '..', 'initial-state.json');
@@ -57,6 +57,9 @@ test('An empty proposal cannot trap new expenses as corrections', () => {
   assert.equal(isNewMovementMessage('Fila 4'), false);
   assert.equal(isCorrectionMessage('a q te referis?', empty), false);
   assert.equal(isCorrectionMessage('1 Ropa y nombre Costurera, 2 Comida, ignorá 3', active), true);
+  assert.equal(isNewMovementMessage('creá una categoría Mascotas'), false);
+  assert.equal(isCategoryRequest('creá una categoría Mascotas'), true);
+  assert.equal(isCorrectionMessage('dividí ese gasto en dos', active), true);
 });
 
 test('one Discord message can rename, recategorize and ignore several rows together', async () => {
@@ -72,9 +75,9 @@ test('one Discord message can rename, recategorize and ignore several rows toget
     { title: 'Avica', kind: 'expense', amount: 24876, currency: 'ARS', date: '2026-10-06', categoryId: null, include: false, reason: 'Categoría incierta' }
   ];
   const message = '1 Ropa y que sea Costurera, 2 verdulería, 3 ingreso extra ponele Trabajo Pintura, ignorá 4';
-  const edits = await interpretCorrections({ message, batch: { rows }, categories, runStructured: async (schema, prompt) => {
+  const interpretation = await interpretCorrections({ message, batch: { rows }, categories, runStructured: async (schema, prompt) => {
     assert.ok(schema.properties.edits);
-    assert.match(prompt, /TODAS las correcciones/);
+    assert.match(prompt, /TODAS las acciones/);
     assert.match(prompt, /Trabajo Pintura/);
     return { edits: [
       { action: 'update', index: 1, categoryId: 'clothes', title: 'Costurera', merchant: null, remember: false },
@@ -83,7 +86,7 @@ test('one Discord message can rename, recategorize and ignore several rows toget
       { action: 'ignore', index: 4, categoryId: null, title: null, merchant: null, remember: false }
     ] };
   } });
-  const result = applyCorrections({ message, rows, categories, edits });
+  const result = applyCorrections({ message, rows, categories, edits: interpretation.edits });
   assert.deepEqual(result.changed, [1, 2, 3, 4]);
   assert.deepEqual(result.rows.map((row) => [row.title, row.categoryId, row.include]), [
     ['Costurera', 'clothes', true], ['Verdulería', 'food', true], ['Trabajo Pintura', 'other-income', true], ['Avica', null, false]
@@ -92,6 +95,46 @@ test('one Discord message can rename, recategorize and ignore several rows toget
     { merchant: 'Eliana Perez', categoryId: 'clothes' }, { merchant: 'Abraham Yucra', categoryId: 'food' }
   ]);
   assert.equal(rows[0].title, 'Eliana Perez');
+});
+
+test('Discord can create a category and split one pending expense without changing its total', async () => {
+  const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'misgastos-discord-split-'));
+  const store = await openStore(folder, initialStatePath);
+  try {
+    const original = { title: 'Compra mixta', kind: 'expense', amount: 1000, currency: 'ARS', date: '2026-10-08', time: '11:30', categoryId: 'food', include: true, reason: '' };
+    const id = '1555788208703414399';
+    store.saveBatch({ id, channelId: '1555788208703414335', authorId: '1555788208703414334', rows: [original] });
+    const plan = applyCorrections({ message: 'creá Mascotas y dividí 1: 600 en Mascotas y el resto en Alimentación', rows: [original], categories: store.getState().data.categories, edits: [
+      { action: 'create_category', index: 0, categoryName: 'Mascotas', kind: 'expense', icon: 'paw-print', tone: 'mint' },
+      { action: 'split', index: 1, parts: [
+        { amount: 600, categoryId: null, categoryName: 'Mascotas', title: 'Alimento para mascota' },
+        { amount: null, categoryId: 'food', categoryName: null, title: null }
+      ] }
+    ] });
+    assert.equal(plan.rows.length, 2);
+    assert.deepEqual(plan.rows.map((row) => row.amount), [600, 400]);
+    assert.equal(plan.rows[0].categoryId, plan.createdCategories[0].id);
+    store.applyDiscordPlan(id, plan);
+    assert.equal(store.latestPendingBatch('1555788208703414335', '1555788208703414334').rows.length, 2);
+    assert.equal(store.getState().data.categories.at(-1).name, 'Mascotas');
+    assert.equal(store.commitBatch(id), 2);
+    assert.equal(store.getState().data.transactions.reduce((sum, row) => sum + row.amount, 0), 1000);
+  } finally {
+    store.close();
+    fs.rmSync(folder, { recursive: true, force: true });
+  }
+});
+
+test('A split with a wrong total leaves the proposal untouched', () => {
+  const rows = [{ title: 'Compra', kind: 'expense', amount: 1000, currency: 'ARS', date: '2026-10-08', categoryId: 'food', include: true, reason: '' }];
+  assert.throws(() => applyCorrections({ message: 'dividí 1 en 600 y 300', rows, categories: [{ id: 'food', name: 'Comida', kind: 'expense' }], edits: [
+    { action: 'split', index: 1, parts: [
+      { amount: 600, categoryId: 'food', categoryName: null, title: null },
+      { amount: 300, categoryId: 'food', categoryName: null, title: null }
+    ] }
+  ] }), /deben sumar 1000/);
+  assert.equal(rows[0].amount, 1000);
+  assert.deepEqual([...mentionedRows('dividí 1 en 2 partes', 3)], [1]);
 });
 
 test('a partial multi-row correction does not change any row', () => {

@@ -234,6 +234,25 @@ async function openStore(userDataPath, initialStatePath) {
     return batch(id);
   }
 
+  function applyDiscordPlan(batchId, plan, expectedRevision) {
+    const pending = batchId ? batch(batchId) : null;
+    if (batchId && (!pending || pending.status !== 'pending')) throw new Error('La propuesta ya no está pendiente');
+    if (!Array.isArray(plan.rows) || plan.rows.length > 30 || !Array.isArray(plan.createdCategories) || !Array.isArray(plan.rules)) throw new Error('Cambios de Discord inválidos');
+    const current = getState();
+    if (expectedRevision !== undefined && current.revision !== expectedRevision) throw new Error('Las categorías cambiaron mientras analizaba el mensaje. Repetí la instrucción.');
+    const clean = validateState({ ...current.data, categories: plan.categories });
+    const validRules = validatedMerchantRules(plan.rules, clean.categories);
+    if (plan.createdCategories.length) backupDaily();
+    db.run('BEGIN TRANSACTION');
+    try {
+      if (plan.createdCategories.length) db.run('UPDATE app_state SET revision = ?, payload = ? WHERE id = 1', [current.revision + 1, JSON.stringify(clean)]);
+      if (pending) db.run('UPDATE discord_batches SET payload = ? WHERE id = ?', [JSON.stringify(plan.rows), batchId]);
+      for (const rule of validRules) db.run('INSERT OR REPLACE INTO merchant_rules VALUES (?, ?, ?)', [rule.key, rule.merchant, rule.categoryId]);
+      db.run('COMMIT');
+    } catch (error) { db.run('ROLLBACK'); throw error; }
+    persist();
+  }
+
   function commitBatch(id) {
     const currentBatch = batch(id);
     if (!currentBatch || currentBatch.status !== 'pending') throw new Error('Este lote ya no está pendiente');
@@ -268,7 +287,7 @@ async function openStore(userDataPath, initialStatePath) {
     persist();
   }
 
-  return { getState, saveState, restoreState, addDevice, deviceForToken, listDevices, revokeDevice, merchantRules, setMerchantRule, replaceMerchantRules, batch, latestPendingBatch, latestUsefulBatch, saveBatch, updateBatch, commitBatch, hasSeenDiscordMessage, markDiscordMessageSeen, backupDir, dbPath, backupNow, close: () => db.close() };
+  return { getState, saveState, restoreState, addDevice, deviceForToken, listDevices, revokeDevice, merchantRules, setMerchantRule, replaceMerchantRules, batch, latestPendingBatch, latestUsefulBatch, saveBatch, updateBatch, applyDiscordPlan, commitBatch, hasSeenDiscordMessage, markDiscordMessageSeen, backupDir, dbPath, backupNow, close: () => db.close() };
 }
 
 module.exports = { openStore, validateState };

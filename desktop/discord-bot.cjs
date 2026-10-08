@@ -11,13 +11,19 @@ function todayInArgentina() {
 }
 
 function isNewMovementMessage(input) {
+  if (isCategoryRequest(input) || /(?:^|\W)(?:divid[ií]|dividir|repart[ií]|repartir|separ[aá]|separar)(?:\W|$)/i.test(input)) return false;
   if (/^(?:ignora|ignor[aá]|omit[ií]|inclu[ií]|fila\s*\d+|(?:el|la)\s+\d+\s+(?:va|es|pon|cambi))/i.test(input)) return false;
   if (/\b(?:pon[eé]|cambi[aá]|correg[ií]|va en)\b/i.test(input)) return false;
   return /(?:\$|\bARS\b|\bUSD\b)\s*\d|\b\d{2,}(?:[.,]\d+)*\b/i.test(input) || /^(?:nuevo\s+(?:gasto|ingreso|movimiento)|(?:tambi[eé]n\s+)?(?:cre[aá]|agreg[aá]|registr[aá]|carg[aá])\b)/i.test(input);
 }
 
+function isCategoryRequest(input) {
+  return /(?:^|\W)(?:cre[aá]|cre[aá]me|crear|hac[eé]|agreg[aá]|agregar|nueva?)(?:\W|$).{0,45}\bcategor[ií]a\b|\bcategor[ií]a\b.{0,45}(?:^|\W)(?:cre[aá]|cre[aá]me|crear|hac[eé]|agreg[aá]|agregar|nueva?)(?:\W|$)/i.test(input);
+}
+
 function isCorrectionMessage(input, pending) {
   if (!pending?.rows.length) return false;
+  if (isCategoryRequest(input) || /(?:^|\W)(?:divid[ií]|dividir|repart[ií]|repartir|separ[aá]|separar)(?:\W|$)/i.test(input)) return true;
   if (/^\s*(?:(?:fila|el|la)\s+)?\d{1,2}\s+[a-záéíóú]/i.test(input)) return true;
   return !isNewMovementMessage(input);
 }
@@ -67,6 +73,32 @@ function createDiscordBot(store, config, onStatus = () => {}) {
     try { onStatus(status, detail); } catch (_) { /* El diagnóstico no debe interrumpir Discord. */ }
   }
 
+  async function recentHistory(message) {
+    try {
+      const recent = await message.channel.messages.fetch({ before: message.id, limit: 8 });
+      return [...recent.values()].reverse().filter((item) => item.author.bot || item.author.id === message.author.id)
+        .map((item) => ({ from: item.author.bot ? 'MisGastos' : 'Usuario', text: String(item.content || '').slice(0, 700) }));
+    } catch (_) { return []; }
+  }
+
+  async function handlePlan(message, input, pending) {
+    const state = store.getState();
+    const categories = state.data.categories;
+    const interpretation = await interpretCorrections({ message: input, batch: pending || { rows: [] }, categories, history: await recentHistory(message) });
+    if (interpretation.clarification || !interpretation.edits.length) {
+      await message.reply({ content: interpretation.clarification || 'No entendí qué cambiar. Decime la fila, el nombre de la categoría o cómo dividir el importe.', allowedMentions: { parse: [] } });
+      return;
+    }
+    const result = applyCorrections({ message: input, rows: pending?.rows || [], categories, edits: interpretation.edits });
+    store.applyDiscordPlan(pending?.id || null, result, state.revision);
+    const created = result.createdCategories.length ? 'Creé ' + result.createdCategories.map((item) => `**${item.name}** (${item.kind === 'income' ? 'ingresos' : 'gastos'})`).join(', ') + '.\n' : '';
+    const learned = result.rules.length ? 'Aprendí ' + result.rules.map((rule) => `${rule.merchant} en ${result.categories.find((item) => item.id === rule.categoryId).name}`).join(', ') + '.\n' : '';
+    const changed = result.changed.length ? `Actualicé ${result.changed.length === 1 ? 'la fila' : 'las filas'} ${result.changed.join(', ')}.\n` : '';
+    const content = pending ? created + changed + learned + preview({ ...pending, rows: result.rows }, result.categories)
+      : created + learned || 'Esa categoría ya existía.';
+    await message.reply({ content: content.slice(0, 1900), allowedMentions: { parse: [] } });
+  }
+
   async function processMessage(message, credentials) {
     if (message.author.bot || message.channelId !== credentials.channelId || !message.guild) return;
     if (store.hasSeenDiscordMessage(message.id)) return;
@@ -84,14 +116,9 @@ function createDiscordBot(store, config, onStatus = () => {}) {
       if (!pending && !attachments.length && /^(guardar|confirmar|listo|sí|si|cancelar|descartar|olvidar)$/i.test(input)) {
         await message.reply({ content: 'No hay una propuesta pendiente. Mandá una captura o un gasto primero.', allowedMentions: { parse: [] } });
       } else if (!attachments.length && /^(?:ayuda|a\s+q(?:u[eé])?\s+te\s+refer[ií]s|qu[eé]\s+quer[eé]s\s+decir)\??$/i.test(input)) {
-        await message.reply({ content: 'Primero te muestro una propuesta; no guardo nada hasta que escribas **guardar**. Podés mandar una captura o un gasto como `Cuotas Mercado Pago $53.349 en Credito`. Para corregir varias filas, decime por ejemplo `1 Ropa y nombre Costurera, 2 Comida, ignorá 3`. Escribí **cancelar** para descartarla.', allowedMentions: { parse: [] } });
-      } else if (!pending && !attachments.length && /^(record[aá]|aprend[eé]|acordate)/i.test(input)) {
-        const categories = store.getState().data.categories;
-        const edits = await interpretCorrections({ message: input, batch: { rows: [] }, categories });
-        const result = applyCorrections({ message: input, rows: [], categories, edits });
-        if (!result.rules.length) throw new Error('Decime el comercio y una categoría existente, por ejemplo: "recordá que Pepito Miguel va en Comida"');
-        for (const rule of result.rules) store.setMerchantRule(rule.merchant, rule.categoryId);
-        await message.reply({ content: result.rules.map((rule) => `Aprendí que ${rule.merchant} va en ${categories.find((item) => item.id === rule.categoryId).name}.`).join('\n').slice(0, 1900), allowedMentions: { parse: [] } });
+        await message.reply({ content: 'Primero te muestro una propuesta; no guardo movimientos hasta que escribas **guardar**. Podés mandar una captura o un gasto como `Cuotas Mercado Pago $53.349 en Credito`. También podés corregir varias filas, crear categorías o dividir un gasto: `dividí 1 en $600 para Mascotas y el resto en Comida`. Escribí **cancelar** para descartar la propuesta.', allowedMentions: { parse: [] } });
+      } else if (!pending && !attachments.length && (/^(record[aá]|aprend[eé]|acordate)/i.test(input) || isCategoryRequest(input))) {
+        await handlePlan(message, input, null);
       } else if (pending && !attachments.length && /^(guardar|confirmar|listo|sí|si)$/i.test(input)) {
         const count = store.commitBatch(pending.id);
         await message.reply({ content: count ? `Listo. Guardé ${count} movimiento${count === 1 ? '' : 's'} en MisGastos.` : 'No había movimientos listos para guardar.', allowedMentions: { parse: [] } });
@@ -99,14 +126,7 @@ function createDiscordBot(store, config, onStatus = () => {}) {
         store.updateBatch(pending.id, pending.rows, 'cancelled');
         await message.reply({ content: 'Descarté la propuesta. No cargué movimientos.', allowedMentions: { parse: [] } });
       } else if (!attachments.length && isCorrectionMessage(input, pending)) {
-        const categories = store.getState().data.categories;
-        const edits = await interpretCorrections({ message: input, batch: pending, categories });
-        const result = applyCorrections({ message: input, rows: pending.rows, categories, edits });
-        if (result.changed.length) store.updateBatch(pending.id, result.rows);
-        for (const rule of result.rules) store.setMerchantRule(rule.merchant, rule.categoryId);
-        const summary = result.changed.length ? `Actualicé ${result.changed.length === 1 ? 'la fila' : 'las filas'} ${result.changed.join(', ')}.\n` : '';
-        const learned = result.rules.length ? '\nAprendí ' + result.rules.length + (result.rules.length === 1 ? ' categoría para próximas veces.' : ' categorías para próximas veces.') : '';
-        await message.reply({ content: (summary + preview({ ...pending, rows: result.rows }, categories) + learned).slice(0, 1900), allowedMentions: { parse: [] } });
+        await handlePlan(message, input, pending);
       } else if (attachments.length || isNewMovementMessage(input)) {
         const images = await Promise.all(attachments.map(downloadImage));
         const state = store.getState().data;
@@ -166,4 +186,4 @@ function createDiscordBot(store, config, onStatus = () => {}) {
   return { start, stop, info };
 }
 
-module.exports = { createDiscordBot, preview, downloadImage, isNewMovementMessage, isCorrectionMessage };
+module.exports = { createDiscordBot, preview, downloadImage, isNewMovementMessage, isCorrectionMessage, isCategoryRequest };

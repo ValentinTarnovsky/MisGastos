@@ -857,7 +857,7 @@ function discordModal() {
     '<form id="discord-form"><label class="field-label" for="discord-channel">ID del canal</label><input class="text-input" id="discord-channel" name="channelId" inputmode="numeric" value="' + escapeHtml(settings.channelId || '') + '" placeholder="Copiar ID del canal en Discord" required />' +
     '<label class="field-label" for="discord-token">Token del bot</label><input class="text-input" id="discord-token" name="botToken" type="password" autocomplete="off" placeholder="' + (settings.hasBotToken ? 'Guardado. Dejar vacío para conservarlo' : 'Pegá el token del bot') + '" />' +
     '<label class="discord-toggle"><input name="enabled" type="checkbox"' + (settings.enabled ? ' checked' : '') + ' /> Activar bot al iniciar MisGastos</label>' +
-    '<p class="settings-note">El bot usa Codex CLI con tu sesión de ChatGPT en esta PC. Consume el límite de uso de tu plan, sin clave API. El token de Discord se cifra en Windows y no se exporta.</p>' +
+    '<p class="settings-note">El bot usa Claude Haiku 5.5 mediante Claude Code CLI en esta PC, con esfuerzo bajo. Consume el límite de uso de tu cuenta de Claude, sin clave API. El token de Discord se cifra en Windows y no se exporta.</p>' +
     '<div class="dialog-actions"><button class="button button-outline" type="button" data-action="close-modal">Cancelar</button><button class="button button-primary" type="submit">Guardar conexión</button></div></form></div>';
 }
 
