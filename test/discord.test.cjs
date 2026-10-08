@@ -7,6 +7,7 @@ const { openStore } = require('../desktop/store.cjs');
 const { extractBatch, interpretCorrections } = require('../desktop/discord-ai.cjs');
 const { isNewMovementMessage, isCorrectionMessage, isCategoryRequest } = require('../desktop/discord-bot.cjs');
 const { applyCorrections, mentionedRows } = require('../desktop/discord-corrections.cjs');
+const { isSavedAdjustmentRequest, buildSavedAdjustment } = require('../desktop/discord-saved-adjustment.cjs');
 const { createDiscordConfig } = require('../desktop/discord-config.cjs');
 
 const initialStatePath = path.join(__dirname, '..', 'initial-state.json');
@@ -135,6 +136,40 @@ test('A split with a wrong total leaves the proposal untouched', () => {
   ] }), /deben sumar 1000/);
   assert.equal(rows[0].amount, 1000);
   assert.deepEqual([...mentionedRows('dividí 1 en 2 partes', 3)], [1]);
+});
+
+test('A saved expense is reduced and its new part is inserted only after confirmation', async () => {
+  const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'misgastos-saved-split-'));
+  const store = await openStore(folder, initialStatePath);
+  try {
+    const current = store.getState();
+    const source = { id: 'existing-rappi', kind: 'expense', title: 'Rappi', amount: 13248, categoryId: 'orders', date: '2026-10-07', createdAt: '2026-10-07T23:58:15.000Z', note: 'Hora: 20:36' };
+    const categories = [...current.data.categories,
+      { id: 'orders', name: 'Pedidos', kind: 'expense', icon: 'package', tone: 'peach' },
+      { id: 'pets', name: 'Mascotas', kind: 'expense', icon: 'paw-print', tone: 'mint' }];
+    store.saveState(current.revision, { ...current.data, categories, transactions: [source] });
+    const message = 'Ayer registré el gasto de 13248 de Pedidos, descontale 3500 y poné esos 3500 en Mascota Comida';
+    assert.equal(isSavedAdjustmentRequest(message), true);
+    const rows = buildSavedAdjustment({ message, choice: { sourceId: source.id, portionAmount: 3500, categoryId: 'pets', title: 'Comida' }, transactions: [source], categories });
+    assert.deepEqual(rows.map((row) => row.amount), [9748, 3500]);
+    const id = '1555788208703414398';
+    store.saveBatch({ id, channelId: '1555788208703414335', authorId: '1555788208703414334', rows });
+    assert.equal(store.getState().data.transactions[0].amount, 13248);
+    assert.equal(store.commitBatch(id), 2);
+    const saved = store.getState().data.transactions;
+    assert.equal(saved.length, 2);
+    assert.deepEqual(saved.map((row) => [row.title, row.amount, row.categoryId]), [['Rappi', 9748, 'orders'], ['Comida', 3500, 'pets']]);
+    assert.equal(saved[0].id, source.id);
+    assert.equal(saved[0].createdAt, source.createdAt);
+    assert.equal(saved.reduce((sum, row) => sum + row.amount, 0), 13248);
+    store.saveBatch({ id: '1555788208703414397', channelId: '1555788208703414335', authorId: '1555788208703414334', rows });
+    assert.throws(() => store.commitBatch('1555788208703414397'), /gasto original cambió/);
+    assert.equal(store.getState().data.transactions.length, 2);
+    assert.throws(() => buildSavedAdjustment({ message: 'restale 3500', choice: { sourceId: source.id, portionAmount: 3500, categoryId: 'pets', title: 'Comida' }, transactions: [source], categories }), /importe original/);
+  } finally {
+    store.close();
+    fs.rmSync(folder, { recursive: true, force: true });
+  }
 });
 
 test('a partial multi-row correction does not change any row', () => {

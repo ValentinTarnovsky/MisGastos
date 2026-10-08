@@ -257,13 +257,30 @@ async function openStore(userDataPath, initialStatePath) {
     const currentBatch = batch(id);
     if (!currentBatch || currentBatch.status !== 'pending') throw new Error('Este lote ya no está pendiente');
     const createdAt = new Date().toISOString();
-    const entries = currentBatch.rows.filter((row) => row.include === true).map((row) => ({
+    const current = getState();
+    const groups = new Map();
+    for (const row of currentBatch.rows) {
+      if (!row.adjustmentGroup) continue;
+      if (!groups.has(row.adjustmentGroup)) groups.set(row.adjustmentGroup, []);
+      groups.get(row.adjustmentGroup).push(row);
+    }
+    const updates = new Map();
+    for (const [groupId, rows] of groups) {
+      const sourceRows = rows.filter((row) => row.sourceTransactionId === groupId);
+      const source = current.data.transactions.find((item) => item.id === groupId);
+      const reference = sourceRows[0]?.sourceOriginal;
+      if (!source || sourceRows.length !== 1 || !reference || rows.some((row) => !row.include || row.kind !== source.kind || row.currency !== 'ARS' || row.date !== source.date || (row.sourceTransactionId && row.sourceTransactionId !== groupId))) throw new Error('La corrección guardada cambió. Cancelala y prepará una propuesta nueva.');
+      if (['amount', 'title', 'categoryId', 'date', 'kind'].some((key) => source[key] !== reference[key]) || rows.reduce((sum, row) => sum + row.amount, 0) !== source.amount) throw new Error('El gasto original cambió o las partes no suman el mismo total');
+      const edited = sourceRows[0];
+      updates.set(groupId, { ...source, amount: edited.amount, title: edited.title, categoryId: edited.categoryId });
+    }
+    const entries = currentBatch.rows.filter((row) => row.include === true && !row.sourceTransactionId).map((row) => ({
       id: 'd' + crypto.randomUUID().replace(/-/g, ''), kind: row.kind, amount: row.amount, title: row.title,
       categoryId: row.categoryId, date: row.date, createdAt, ...(row.time ? { note: 'Hora: ' + row.time } : {})
     }));
-    const current = getState();
-    const clean = validateState({ ...current.data, transactions: [...current.data.transactions, ...entries] });
-    backupDaily();
+    const transactions = current.data.transactions.map((item) => updates.get(item.id) || item).concat(entries);
+    const clean = validateState({ ...current.data, transactions });
+    if (groups.size) backupNow(); else backupDaily();
     db.run('BEGIN TRANSACTION');
     try {
       db.run('UPDATE app_state SET revision = ?, payload = ? WHERE id = 1', [current.revision + 1, JSON.stringify(clean)]);
@@ -271,7 +288,7 @@ async function openStore(userDataPath, initialStatePath) {
       db.run('COMMIT');
     } catch (error) { db.run('ROLLBACK'); throw error; }
     persist();
-    return entries.length;
+    return entries.length + updates.size;
   }
 
   function hasSeenDiscordMessage(id) {

@@ -102,6 +102,7 @@ async function extractBatch({ images, caption, categories, rules, existing, toda
     'En capturas, excluí cargos de tarjeta, cuotas que se pagarán como un único gasto, cargos USD y transferencias entre cuentas propias.',
     'Si el usuario escribe expresamente un pago único de tarjeta o cuotas como gasto nuevo, proponelo en ARS con la categoría de Crédito si existe. No lo excluyas solo por ser de tarjeta.',
     'Si el usuario se refiere a una fila anterior sin repetir el importe, usá las filas de referencia solo cuando el comercio coincida claramente. Priorizá el nombre sobre un número de fila ambiguo. Conservá importe y fecha originales. Si no podés identificarla, devolvé rows=[].',
+    'Si el mensaje pide descontar, dividir o corregir un movimiento YA GUARDADO, devolvé rows=[]; esta extracción no puede modificarlo y no debe proponer una parte nueva aislada.',
     'Un ingreso de origen incierto o una transferencia a una persona sin regla conocida: include=false hasta que el usuario aclare.',
     'No conviertas USD a ARS. Para ARS, conservá el valor con decimales; la app redondeará al peso al guardar.',
     'Máximo 30 filas. Usá nombres cortos y reconocibles como título.',
@@ -203,4 +204,32 @@ async function interpretCorrections({ message, batch, categories, history = [], 
   return { edits: result.edits, clarification: typeof result.clarification === 'string' ? result.clarification.trim().slice(0, 180) : null };
 }
 
-module.exports = { extractBatch, interpretCorrections, runClaude, keyOf, validDate };
+const savedAdjustmentSchema = {
+  type: 'object', additionalProperties: false,
+  properties: {
+    sourceId: { type: ['string', 'null'] }, portionAmount: { type: ['number', 'null'] },
+    categoryId: { type: ['string', 'null'] }, title: { type: ['string', 'null'] },
+    clarification: { type: ['string', 'null'] }
+  },
+  required: ['sourceId', 'portionAmount', 'categoryId', 'title', 'clarification']
+};
+
+async function interpretSavedAdjustment({ message, transactions, categories, today, history = [], runStructured = runClaude }) {
+  const names = new Map(categories.map((item) => [item.id, item.name]));
+  const prompt = [
+    'El dueño quiere corregir un gasto YA GUARDADO, no registrar un gasto adicional por el total mencionado.',
+    'Elegí una sola transacción existente por su importe, fecha, nombre o categoría. "Ayer" es el día anterior a la fecha actual. Si hay varias posibles, no elijas: preguntá en clarification.',
+    'portionAmount es el monto que se descuenta de la transacción original para crear una segunda parte. Debe ser positivo y menor que el importe original.',
+    'categoryId es la categoría de la parte nueva. title es el título de la parte nueva. Si dice "en Mascota Comida", Mascotas es la categoría y Comida es el título.',
+    'No cambies la categoría ni el título del movimiento original. La app restará portionAmount y propondrá la parte nueva por separado. No guardará nada hasta que el dueño confirme.',
+    'Si la instrucción no especifica con claridad movimiento original, importe a descontar, categoría o título nuevo, devolvé sourceId=null y una pregunta concreta en clarification.',
+    'Fecha actual: ' + today,
+    'Categorías: ' + JSON.stringify(categories.map((item) => ({ id: item.id, name: item.name, kind: item.kind }))),
+    'Movimientos guardados: ' + JSON.stringify(transactions.slice(-80).map((item) => ({ id: item.id, title: item.title, amount: item.amount, date: item.date, category: names.get(item.categoryId), kind: item.kind }))),
+    'Conversación reciente: ' + JSON.stringify(history),
+    'Mensaje actual: ' + message
+  ].join('\n');
+  return runStructured(savedAdjustmentSchema, prompt);
+}
+
+module.exports = { extractBatch, interpretCorrections, interpretSavedAdjustment, runClaude, keyOf, validDate };

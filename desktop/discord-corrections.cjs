@@ -64,6 +64,7 @@ function applyCorrections({ message, rows, categories, edits }) {
     changed.add(edit.index);
 
     if (edit.action === 'ignore') {
+      if (row.adjustmentGroup) throw new Error('No podés ignorar una sola parte de un gasto guardado. Escribí cancelar para descartar toda la corrección.');
       row.include = false;
       row.reason = 'Ignorado por indicación tuya';
       continue;
@@ -94,7 +95,9 @@ function applyCorrections({ message, rows, categories, edits }) {
         if (!category || category.kind !== row.kind || ['savings', 'savings-return'].includes(category.id)) throw new Error('Indicá la categoría de cada parte de la fila ' + edit.index);
         const title = part.title == null ? row.title : String(part.title).trim();
         if (!title || title.length > 80) throw new Error('Nombre inválido en la división de la fila ' + edit.index);
-        return { ...row, amount, categoryId: category.id, title };
+        const dividedPart = { ...row, amount, categoryId: category.id, title };
+        if (partIndex > 0) { delete dividedPart.sourceTransactionId; delete dividedPart.sourceOriginal; }
+        return dividedPart;
       });
       if (remainderIndex !== -1) divided[remainderIndex].amount = row.amount - used;
       if (divided.some((part) => !Number.isSafeInteger(part.amount) || part.amount <= 0) || divided.reduce((sum, part) => sum + part.amount, 0) !== row.amount) throw new Error('Las partes de la fila ' + edit.index + ' deben sumar ' + row.amount + ' pesos');
