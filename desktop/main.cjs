@@ -90,7 +90,9 @@ function createWindow() {
   mainWindow.webContents.session.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));
 }
 
-app.on('second-instance', () => showWindow());
+app.on('second-instance', (_event, commandLine) => {
+  if (!commandLine.includes('--hidden')) showWindow();
+});
 app.on('window-all-closed', () => {});
 app.on('child-process-gone', (_event, details) => {
   if (details.reason !== 'clean-exit') diagnosticLog?.write('error', 'child_process_gone', { type: details.type, reason: details.reason, exitCode: details.exitCode });
