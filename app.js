@@ -138,8 +138,8 @@ function loadData() {
 
 let data = loadData();
 let route = 'home';
-let selectedMonth = LIVE ? new Date().toISOString().slice(0, 7) : SAMPLE_MONTH;
-let annualYear = LIVE ? new Date().getFullYear() : 2026;
+let selectedMonth = LIVE ? todayInArgentina().slice(0, 7) : SAMPLE_MONTH;
+let annualYear = LIVE ? Number(todayInArgentina().slice(0, 4)) : 2026;
 let filter = 'all';
 let query = '';
 let categoryKind = 'expense';
@@ -224,6 +224,11 @@ function lastDateOfMonth(month) {
   const parts = month.split('-').map(Number);
   const day = new Date(parts[0], parts[1], 0).getDate();
   return month + '-' + String(day).padStart(2, '0');
+}
+
+function todayInArgentina() {
+  const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Argentina/Buenos_Aires', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date());
+  return ['year', 'month', 'day'].map(function (type) { return parts.find(function (part) { return part.type === type; }).value; }).join('-');
 }
 
 function categoryById(id) {
@@ -731,7 +736,7 @@ function transactionModal() {
   const item = modal.id ? data.transactions.find(function (entry) { return entry.id === modal.id; }) : null;
   const kind = modal.kind || (item && item.kind) || 'expense';
   const categories = data.categories.filter(function (entry) { return entry.kind === kind; });
-  const date = item ? item.date : lastDateOfMonth(selectedMonth);
+  const date = item ? item.date : todayInArgentina();
   return '<div class="modal-backdrop" data-action="close-modal"></div><div class="dialog transaction-dialog" role="dialog" aria-modal="true" aria-labelledby="dialog-title">' +
     '<div class="dialog-head"><div><p class="eyebrow">MOVIMIENTO</p><h2 id="dialog-title">' + (item ? 'Editar movimiento' : 'Agregar movimiento') + '</h2></div><button class="icon-button" data-action="close-modal" type="button" aria-label="Cerrar">' + icon('close', 20) + '</button></div>' +
     '<form id="transaction-form" novalidate><div class="kind-switch"><button type="button" data-modal-kind="expense" class="' + (kind === 'expense' ? 'selected' : '') + '">Gasto</button><button type="button" data-modal-kind="income" class="' + (kind === 'income' ? 'selected' : '') + '">Ingreso</button></div>' +
@@ -771,7 +776,7 @@ function savingsModal() {
   const action = item ? (item.categoryId === 'savings' ? 'deposit' : 'withdrawal') : modal.action;
   const deposit = action === 'deposit';
   const currency = item ? savingsCurrency(item) : 'ARS';
-  const date = item ? item.date : lastDateOfMonth(selectedMonth);
+  const date = item ? item.date : todayInArgentina();
   const balances = savingsBalances();
   const availableCurrencies = SAVINGS_CURRENCIES.concat((currency === 'EUR' && item) || (!deposit && balances.EUR > 0) ? [LEGACY_EUR] : []);
   const choices = availableCurrencies.filter(function (entry) { return deposit || balances[entry.code] > 0 || entry.code === currency && item; }).map(function (entry) {
